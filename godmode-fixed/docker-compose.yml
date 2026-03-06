@@ -1,0 +1,28 @@
+version: '3.9'
+
+services:
+  api:
+    build: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - GODMODE_API_KEY=${GODMODE_API_KEY:-godmode-dev-key}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+      - NEXT_PUBLIC_API_KEY=${GODMODE_API_KEY:-godmode-dev-key}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

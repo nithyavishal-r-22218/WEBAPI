@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@800&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 260px; background: #050508; color: #e8e8f0; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    .header { padding: 16px; border-bottom: 1px solid #1a1a2e; display: flex; align-items: center; justify-content: space-between; }
+    .logo { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; }
+    .logo span { color: #6c63ff; } .logo em { color: #00d4aa; font-style: normal; }
+    .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #555570; }
+    .rec-dot.active { background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .step-count { background: #0d0d14; border: 1px solid #1a1a2e; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+    .count-val { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #6c63ff; }
+    .count-label { color: #555570; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .btn { border: none; border-radius: 6px; padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s; letter-spacing: 0.5px; }
+    .btn-record { background: #6c63ff; color: #fff; }
+    .btn-record:hover { background: #7c75ff; }
+    .btn-record.recording { background: #ef4444; }
+    .btn-record.recording:hover { background: #f87171; }
+    .btn-send { background: #00d4aa18; color: #00d4aa; border: 1px solid #00d4aa40; }
+    .btn-send:hover { background: #00d4aa28; }
+    .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+    .status { font-size: 10px; color: #555570; text-align: center; min-height: 14px; }
+    .status.ok { color: #00d4aa; }
+    .status.err { color: #ef4444; }
+    a { color: #6c63ff; text-decoration: none; font-size: 10px; text-align: center; display: block; padding: 8px; border-top: 1px solid #1a1a2e; }
+    a:hover { color: #7c75ff; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo"><span>GOD</span><em>MODE</em></div>
+    <div class="rec-dot" id="recDot"></div>
+  </div>
+  <div class="body">
+    <div class="step-count">
+      <div>
+        <div class="count-val" id="stepCount">0</div>
+        <div class="count-label">Steps Recorded</div>
+      </div>
+    </div>
+    <button class="btn btn-record" id="recordBtn">⏺ START RECORDING</button>
+    <button class="btn btn-send" id="sendBtn" disabled>▶ SEND TO GODMODE</button>
+    <div class="status" id="status"></div>
+  </div>
+  <a href="http://localhost:3000" target="_blank">Open Dashboard →</a>
+
+  <script>
+    let recording = false;
+    let stepCount = 0;
+
+    const recordBtn = document.getElementById('recordBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const stepCountEl = document.getElementById('stepCount');
+    const statusEl = document.getElementById('status');
+    const recDot = document.getElementById('recDot');
+
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className = `status ${type}`;
+    }
+
+    // Init state
+    chrome.runtime.sendMessage({ type: 'GET_STATE' }, ({ recording: r, steps }) => {
+      recording = r;
+      stepCount = steps;
+      updateUI();
+    });
+
+    function updateUI() {
+      stepCountEl.textContent = stepCount;
+      recordBtn.textContent = recording ? '⏹ STOP RECORDING' : '⏺ START RECORDING';
+      recordBtn.className = `btn btn-record ${recording ? 'recording' : ''}`;
+      recDot.className = `rec-dot ${recording ? 'active' : ''}`;
+      sendBtn.disabled = stepCount === 0 || recording;
+    }
+
+    recordBtn.addEventListener('click', () => {
+      const type = recording ? 'STOP_RECORDING' : 'START_RECORDING';
+      chrome.runtime.sendMessage({ type }, (res) => {
+        recording = !recording;
+        if (!recording) stepCount = res.steps?.length || 0;
+        else stepCount = 0;
+        updateUI();
+        setStatus(recording ? 'Recording started…' : `${stepCount} steps captured`, recording ? '' : 'ok');
+      });
+    });
+
+    sendBtn.addEventListener('click', () => {
+      setStatus('Sending to GodMode…');
+      chrome.runtime.sendMessage({ type: 'SEND_TO_GODMODE' }, (res) => {
+        if (res.error) { setStatus('Error: ' + res.error, 'err'); return; }
+        setStatus(`✓ Job ${res.jobId?.slice(0,8)}… queued!`, 'ok');
+        stepCount = 0;
+        updateUI();
+      });
+    });
+  </script>
+</body>
+</html>
