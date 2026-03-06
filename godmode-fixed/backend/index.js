@@ -11,6 +11,11 @@ const jobs = new Map();
 const queue = [];
 let isProcessing = false;
 
+// ─── In-memory Stores for Extension Sync ────────────────────────────────────
+const recordings = new Map();
+const testCases  = new Map();
+let results      = [];
+
 const JobStatus = {
   QUEUED: 'QUEUED',
   RUNNING: 'RUNNING',
@@ -136,6 +141,89 @@ app.delete('/jobs/:id', requireAuth, (req, res) => {
   if (idx > -1) queue.splice(idx, 1);
   jobs.delete(job.id);
   res.json({ message: 'Job cancelled' });
+});
+
+// ─── Recordings ──────────────────────────────────────────────────────────────
+
+// Upsert a recording
+app.post('/recordings', requireAuth, (req, res) => {
+  const { id, name, startUrl, steps, network, ms, at } = req.body;
+  if (!id) return res.status(400).json({ error: '`id` is required' });
+  const rec = {
+    id, name, startUrl,
+    steps: steps || [],
+    network: network || [],
+    ms: ms || 0,
+    at: at || new Date().toISOString(),
+  };
+  recordings.set(id, rec);
+  log('info', 'recording_saved', { id });
+  res.status(201).json(rec);
+});
+
+// List all recordings
+app.get('/recordings', requireAuth, (req, res) => {
+  const list = [...recordings.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
+  res.json({ recordings: list });
+});
+
+// Delete a recording
+app.delete('/recordings/:id', requireAuth, (req, res) => {
+  if (!recordings.has(req.params.id)) return res.status(404).json({ error: 'Recording not found' });
+  recordings.delete(req.params.id);
+  res.json({ message: 'Recording deleted' });
+});
+
+// ─── Test Cases (aliased as /cases and /test-cases) ──────────────────────────
+
+function upsertTestCase(req, res) {
+  const { id, name, type, framework, language, method, apiUrl, expectedStatus, browser, webUrl, steps, createdAt } = req.body;
+  if (!id) return res.status(400).json({ error: '`id` is required' });
+  const tc = {
+    id, name, type, framework, language, method,
+    apiUrl, expectedStatus, browser, webUrl, steps,
+    createdAt: createdAt || new Date().toISOString(),
+  };
+  testCases.set(id, tc);
+  log('info', 'test_case_saved', { id });
+  res.status(201).json(tc);
+}
+
+function listTestCases(req, res) {
+  const list = [...testCases.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ testCases: list });
+}
+
+function deleteTestCase(req, res) {
+  if (!testCases.has(req.params.id)) return res.status(404).json({ error: 'Test case not found' });
+  testCases.delete(req.params.id);
+  res.json({ message: 'Test case deleted' });
+}
+
+app.post('/cases', requireAuth, upsertTestCase);
+app.post('/test-cases', requireAuth, upsertTestCase);
+app.get('/cases', requireAuth, listTestCases);
+app.get('/test-cases', requireAuth, listTestCases);
+app.delete('/cases/:id', requireAuth, deleteTestCase);
+app.delete('/test-cases/:id', requireAuth, deleteTestCase);
+
+// ─── Results ─────────────────────────────────────────────────────────────────
+
+// Append a result (keep last 500)
+app.post('/results', requireAuth, (req, res) => {
+  const { id, caseId, caseName, caseType, pass, status, ms, error, t0 } = req.body;
+  if (!id) return res.status(400).json({ error: '`id` is required' });
+  const result = { id, caseId, caseName, caseType, pass, status, ms, error: error || null, t0: t0 || new Date().toISOString() };
+  results.push(result);
+  if (results.length > 500) results = results.slice(-500);
+  log('info', 'result_saved', { id });
+  res.status(201).json(result);
+});
+
+// List results (last 100, sorted by t0 desc)
+app.get('/results', requireAuth, (req, res) => {
+  const list = [...results].sort((a, b) => new Date(b.t0) - new Date(a.t0)).slice(0, 100);
+  res.json({ results: list });
 });
 
 // ─── Start ───────────────────────────────────────────────────────────────────
