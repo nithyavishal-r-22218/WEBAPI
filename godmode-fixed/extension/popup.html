@@ -3,54 +3,159 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+    :root {
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --primary: #3D52A0;
+      --secondary: #7091E6;
+      --text: #1a1a2e;
+      --text-muted: #8697C4;
+      --border: #ADBBDA;
+      --danger: #ef4444;
+      --success: #10b981;
+      --radius: 10px;
+    }
+    :root.dark {
+      --bg: #050508;
+      --surface: #0d0d14;
+      --primary: #7091E6;
+      --secondary: #3D52A0;
+      --text: #e8e8f0;
+      --text-muted: #555570;
+      --border: #1a1a2e;
+      --danger: #ef4444;
+      --success: #00d4aa;
+      --radius: 10px;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { width: 260px; background: #050508; color: #e8e8f0; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
-    .header { padding: 16px; border-bottom: 1px solid #1a1a2e; display: flex; align-items: center; justify-content: space-between; }
-    .logo { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; }
-    .logo span { color: #6c63ff; } .logo em { color: #00d4aa; font-style: normal; }
-    .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #555570; }
-    .rec-dot.active { background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: blink 1s infinite; }
+
+    body {
+      width: 270px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      transition: background-color 0.25s, color 0.25s;
+    }
+
+    .header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface);
+      transition: background-color 0.25s, border-color 0.25s;
+    }
+
+    .logo {
+      font-family: 'Inter', sans-serif;
+      font-size: 16px; font-weight: 700;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .logo-icon {
+      display: inline-flex; align-items: center; margin-right: 6px;
+    }
+    .logo span { color: var(--primary); transition: color 0.25s; }
+    .logo em { color: var(--secondary); font-style: normal; transition: color 0.25s; }
+
+    .header-right { display: flex; align-items: center; gap: 8px; }
+
+    .rec-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-muted); transition: background 0.25s;
+    }
+    .rec-dot.active {
+      background: var(--danger); box-shadow: 0 0 8px var(--danger);
+      animation: blink 1s infinite;
+    }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .step-count { background: #0d0d14; border: 1px solid #1a1a2e; border-radius: 6px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
-    .count-val { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #6c63ff; }
-    .count-label { color: #555570; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
-    .btn { border: none; border-radius: 6px; padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; cursor: pointer; width: 100%; transition: all 0.2s; letter-spacing: 0.5px; }
-    .btn-record { background: #6c63ff; color: #fff; }
-    .btn-record:hover { background: #7c75ff; }
-    .btn-record.recording { background: #ef4444; }
-    .btn-record.recording:hover { background: #f87171; }
-    .btn-send { background: #00d4aa18; color: #00d4aa; border: 1px solid #00d4aa40; }
-    .btn-send:hover { background: #00d4aa28; }
-    .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
-    .status { font-size: 10px; color: #555570; text-align: center; min-height: 14px; }
-    .status.ok { color: #00d4aa; }
-    .status.err { color: #ef4444; }
-    a { color: #6c63ff; text-decoration: none; font-size: 10px; text-align: center; display: block; padding: 8px; border-top: 1px solid #1a1a2e; }
-    a:hover { color: #7c75ff; }
+
+    .theme-toggle {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text-muted); cursor: pointer; padding: 3px 7px; font-size: 11px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .theme-toggle:hover { border-color: var(--primary); color: var(--primary); }
+
+    .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    .step-count {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 12px 14px; display: flex; justify-content: space-between; align-items: center;
+      transition: background-color 0.25s, border-color 0.25s;
+    }
+    .count-val {
+      font-family: 'Inter', sans-serif; font-size: 26px; font-weight: 700;
+      color: var(--primary); transition: color 0.25s;
+    }
+    .count-label {
+      color: var(--text-muted); font-size: 10px;
+      text-transform: uppercase; letter-spacing: 1px; margin-top: 2px;
+      transition: color 0.25s;
+    }
+
+    .btn {
+      border: none; border-radius: 8px; padding: 10px 14px;
+      font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+      cursor: pointer; width: 100%; transition: filter 0.2s, transform 0.15s;
+      letter-spacing: 0.3px;
+    }
+    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-record { background: var(--primary); color: #fff; }
+    .btn-record.recording { background: var(--danger); }
+
+    .btn-send {
+      background: transparent; color: var(--primary);
+      border: 1px solid var(--border);
+      transition: border-color 0.2s, filter 0.2s, transform 0.15s;
+    }
+    .btn-send:hover { border-color: var(--primary); }
+    .btn-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; filter: none; }
+
+    .status {
+      font-size: 11px; color: var(--text-muted); text-align: center;
+      min-height: 16px; transition: color 0.2s;
+    }
+    .status.ok { color: var(--success); }
+    .status.err { color: var(--danger); }
+
+    .footer-link {
+      color: var(--primary); text-decoration: none; font-size: 11px;
+      text-align: center; display: block; padding: 10px;
+      border-top: 1px solid var(--border); font-weight: 500;
+      transition: color 0.2s, border-color 0.25s; background: var(--surface);
+    }
+    .footer-link:hover { color: var(--secondary); }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="logo">
-      <svg height="18" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:6px">
-        <defs>
-          <linearGradient id="g1" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#00d4aa"/>
-            <stop offset="100%" stop-color="#0ea5e9"/>
-          </linearGradient>
-        </defs>
-        <circle cx="12" cy="12" r="6.5" stroke="url(#g1)" stroke-width="1.5" fill="none"/>
-        <circle cx="20" cy="20" r="6.5" stroke="url(#g1)" stroke-width="1.5" fill="none"/>
-        <circle cx="12" cy="12" r="2" fill="url(#g1)"/>
-        <circle cx="20" cy="20" r="2" fill="url(#g1)"/>
-        <text x="8.5" y="15" font-family="monospace" font-size="5" fill="url(#g1)" font-weight="bold">{</text>
-        <text x="14" y="15" font-family="monospace" font-size="5" fill="url(#g1)" font-weight="bold">}</text>
-        <text x="16.5" y="23" font-family="monospace" font-size="5" fill="url(#g1)" font-weight="bold">→</text>
-      </svg><span>WEB</span><em>API</em>
+      <span class="logo-icon">
+        <svg height="20" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="popupGrad" x1="0" y1="0" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="var(--primary)"/>
+              <stop offset="100%" stop-color="var(--secondary)"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="26" height="26" rx="7" fill="url(#popupGrad)" opacity="0.12"/>
+          <rect x="2" y="2" width="26" height="26" rx="7" stroke="url(#popupGrad)" stroke-width="1.5"/>
+          <path d="M10 10L7 15L10 20" stroke="url(#popupGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M20 10L23 15L20 20" stroke="url(#popupGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="14" y1="9" x2="16" y2="21" stroke="url(#popupGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/>
+        </svg>
+      </span>
+      <span>WEB</span><em>API</em>
     </div>
-    <div class="rec-dot" id="recDot"></div>
+    <div class="header-right">
+      <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">☀</button>
+      <div class="rec-dot" id="recDot"></div>
+    </div>
   </div>
   <div class="body">
     <div class="step-count">
@@ -63,7 +168,7 @@
     <button class="btn btn-send" id="sendBtn" disabled>▶ SEND TO WEBAPI</button>
     <div class="status" id="status"></div>
   </div>
-  <a href="http://localhost:3000" target="_blank">Open Dashboard →</a>
+  <a href="http://localhost:3000" target="_blank" class="footer-link">Open Dashboard →</a>
 
   <script>
     let recording = false;
@@ -74,10 +179,34 @@
     const stepCountEl = document.getElementById('stepCount');
     const statusEl = document.getElementById('status');
     const recDot = document.getElementById('recDot');
+    const themeToggle = document.getElementById('themeToggle');
+
+    // Apply saved theme
+    const savedTheme = localStorage.getItem('webapi-popup-theme') || 'light';
+    applyTheme(savedTheme);
+
+    function applyTheme(mode) {
+      if (mode === 'dark') {
+        document.documentElement.classList.add('dark');
+        themeToggle.textContent = '☀';
+        themeToggle.title = 'Switch to light mode';
+      } else {
+        document.documentElement.classList.remove('dark');
+        themeToggle.textContent = '🌙';
+        themeToggle.title = 'Switch to dark mode';
+      }
+    }
+
+    themeToggle.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.contains('dark');
+      const next = isDark ? 'light' : 'dark';
+      localStorage.setItem('webapi-popup-theme', next);
+      applyTheme(next);
+    });
 
     function setStatus(msg, type = '') {
       statusEl.textContent = msg;
-      statusEl.className = `status ${type}`;
+      statusEl.className = 'status ' + type;
     }
 
     // Init state
@@ -91,8 +220,8 @@
     function updateUI() {
       stepCountEl.textContent = stepCount;
       recordBtn.textContent = recording ? '⏹ STOP RECORDING' : '⏺ START RECORDING';
-      recordBtn.className = `btn btn-record ${recording ? 'recording' : ''}`;
-      recDot.className = `rec-dot ${recording ? 'active' : ''}`;
+      recordBtn.className = 'btn btn-record' + (recording ? ' recording' : '');
+      recDot.className = 'rec-dot' + (recording ? ' active' : '');
       sendBtn.disabled = stepCount === 0 || recording;
     }
 
@@ -111,7 +240,7 @@
       setStatus('Sending to WEBAPI…');
       chrome.runtime.sendMessage({ type: 'SEND_TO_GODMODE' }, (res) => {
         if (res.error) { setStatus('Error: ' + res.error, 'err'); return; }
-        setStatus(`✓ Job ${res.jobId?.slice(0,8)}… queued!`, 'ok');
+        setStatus('✓ Job ' + (res.jobId?.slice(0,8) || '') + '… queued!', 'ok');
         stepCount = 0;
         updateUI();
       });
@@ -119,3 +248,4 @@
   </script>
 </body>
 </html>
+

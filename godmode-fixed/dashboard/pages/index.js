@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Head from 'next/head';
 import styles from '../styles/godmode.module.css';
 
@@ -15,6 +15,215 @@ const STATUS_COLOR = {
 
 const STATUS_ICON = { QUEUED: '⏳', RUNNING: '⚡', DONE: '✓', FAILED: '✗' };
 
+// ── Theme System ──────────────────────────────────────────────
+const THEMES = {
+  default: {
+    name: 'Default',
+    primary: '#3D52A0',
+    bg: '#f5f5f7',
+    surface: '#ffffff',
+    secondary: '#7091E6',
+    text: '#1a1a2e',
+    textMuted: '#8697C4',
+    border: '#ADBBDA',
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+  },
+  lavender: {
+    name: 'Lavender',
+    primary: '#3D52A0',
+    bg: '#EDE8F5',
+    surface: '#ffffff',
+    secondary: '#7091E6',
+    text: '#1a1a2e',
+    textMuted: '#8697C4',
+    border: '#ADBBDA',
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+  },
+  desert: {
+    name: 'Desert',
+    primary: '#E64833',
+    bg: '#FBE9D0',
+    surface: '#ffffff',
+    secondary: '#244855',
+    text: '#1a1a2e',
+    textMuted: '#874F41',
+    border: '#90AEAD',
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+  },
+  ocean: {
+    name: 'Ocean',
+    primary: '#024950',
+    bg: '#AFDDE5',
+    surface: '#ffffff',
+    secondary: '#0FA4AF',
+    text: '#003135',
+    textMuted: '#003135',
+    border: '#90C9CE',
+    success: '#10b981',
+    danger: '#964734',
+    warning: '#f59e0b',
+  },
+  sunset: {
+    name: 'Sunset',
+    primary: '#E43D12',
+    bg: '#EBE9E1',
+    surface: '#ffffff',
+    secondary: '#D6536D',
+    text: '#1a1a2e',
+    textMuted: '#874F41',
+    border: '#FFA2B6',
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#EFB11D',
+  },
+};
+
+const DEFAULT_CUSTOM_COLORS = {
+  primary: '#3D52A0',
+  bg: '#f5f5f7',
+  surface: '#ffffff',
+  secondary: '#7091E6',
+  text: '#1a1a2e',
+  border: '#ADBBDA',
+};
+
+function applyTheme(theme) {
+  if (typeof document === 'undefined') return;
+  const r = document.documentElement;
+  r.style.setProperty('--bg', theme.bg);
+  r.style.setProperty('--surface', theme.surface);
+  r.style.setProperty('--primary', theme.primary);
+  r.style.setProperty('--secondary', theme.secondary);
+  r.style.setProperty('--text', theme.text);
+  r.style.setProperty('--text-muted', theme.textMuted || '#8697C4');
+  r.style.setProperty('--border', theme.border);
+  r.style.setProperty('--success', theme.success || '#10b981');
+  r.style.setProperty('--danger', theme.danger || '#ef4444');
+  r.style.setProperty('--warning', theme.warning || '#f59e0b');
+}
+
+function buildCustomTheme(colors) {
+  return {
+    name: 'Custom',
+    primary: colors.primary,
+    bg: colors.bg,
+    surface: colors.surface,
+    secondary: colors.secondary,
+    text: colors.text,
+    textMuted: colors.text,
+    border: colors.border,
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+  };
+}
+
+// ── ThemeSwitcher Component ──────────────────────────────────
+function ThemeSwitcher({ current, onChange }) {
+  const [showCustom, setShowCustom] = useState(false);
+  const [customColors, setCustomColors] = useState(DEFAULT_CUSTOM_COLORS);
+  const panelRef = useRef(null);
+  const btnRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('webapi-custom-colors');
+      if (saved) setCustomColors(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  // Close picker when clicking outside
+  useEffect(() => {
+    if (!showCustom) return;
+    function handleClickOutside(e) {
+      if (
+        panelRef.current && !panelRef.current.contains(e.target) &&
+        btnRef.current && !btnRef.current.contains(e.target)
+      ) {
+        setShowCustom(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showCustom]);
+
+  function handlePresetClick(key) {
+    setShowCustom(false);
+    onChange(key);
+  }
+
+  function handleApplyCustom() {
+    try { localStorage.setItem('webapi-custom-colors', JSON.stringify(customColors)); } catch {}
+    onChange('custom', buildCustomTheme(customColors));
+    setShowCustom(false);
+  }
+
+  function handleResetCustom() {
+    setCustomColors(DEFAULT_CUSTOM_COLORS);
+  }
+
+  return (
+    <div className={styles.themeSwitcher}>
+      {Object.entries(THEMES).map(([key, theme]) => (
+        <button
+          key={key}
+          className={`${styles.themeSwatch} ${current === key ? styles.themeSwatchActive : ''}`}
+          style={{ background: theme.primary }}
+          onClick={() => handlePresetClick(key)}
+          title={theme.name}
+          aria-label={`Switch to ${theme.name} theme`}
+        />
+      ))}
+      <button
+        ref={btnRef}
+        className={`${styles.themeSwatch} ${styles.themeSwatchCustom} ${current === 'custom' ? styles.themeSwatchActive : ''}`}
+        onClick={() => setShowCustom(v => !v)}
+        title="Custom theme"
+        aria-label="Open custom theme picker"
+      >
+        🎨
+      </button>
+
+      {showCustom && (
+        <div ref={panelRef} className={styles.customPickerPanel} role="dialog" aria-label="Custom theme picker">
+          <div className={styles.customPickerTitle}>Custom Theme</div>
+          {[
+            ['Background', 'bg'],
+            ['Surface', 'surface'],
+            ['Primary', 'primary'],
+            ['Secondary', 'secondary'],
+            ['Text', 'text'],
+            ['Border', 'border'],
+          ].map(([label, key]) => (
+            <div key={key} className={styles.colorRow}>
+              <span className={styles.colorLabel}>{label}</span>
+              <input
+                type="color"
+                value={customColors[key]}
+                onChange={e => setCustomColors(c => ({ ...c, [key]: e.target.value }))}
+                className={styles.colorInput}
+                aria-label={`${label} color`}
+              />
+              <span className={styles.colorHex}>{customColors[key]}</span>
+            </div>
+          ))}
+          <div className={styles.customPickerActions}>
+            <button className={styles.btnSecondary} onClick={handleResetCustom}>Reset</button>
+            <button className={styles.btnPrimary} onClick={handleApplyCustom}>Apply</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Helpers ──────────────────────────────────────────────────
 function timeAgo(iso) {
   if (!iso) return '—';
   const diff = Date.now() - new Date(iso).getTime();
@@ -23,6 +232,7 @@ function timeAgo(iso) {
   return `${Math.floor(diff / 3600000)}h ago`;
 }
 
+// ── Main Dashboard ────────────────────────────────────────────
 export default function GodMode() {
   const [jobs, setJobs] = useState([]);
   const [health, setHealth] = useState(null);
@@ -32,6 +242,33 @@ export default function GodMode() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('ALL');
   const [log, setLog] = useState([]);
+  const [currentTheme, setCurrentTheme] = useState('default');
+
+  // Load & apply saved theme on mount
+  useEffect(() => {
+    try {
+      const savedKey = localStorage.getItem('webapi-theme') || 'default';
+      setCurrentTheme(savedKey);
+      if (savedKey === 'custom') {
+        const savedColors = localStorage.getItem('webapi-custom-colors');
+        if (savedColors) {
+          applyTheme(buildCustomTheme(JSON.parse(savedColors)));
+        } else {
+          applyTheme(THEMES.default);
+        }
+      } else {
+        applyTheme(THEMES[savedKey] || THEMES.default);
+      }
+    } catch {
+      applyTheme(THEMES.default);
+    }
+  }, []);
+
+  function handleThemeChange(key, customTheme) {
+    setCurrentTheme(key);
+    try { localStorage.setItem('webapi-theme', key); } catch {}
+    applyTheme(customTheme || THEMES[key] || THEMES.default);
+  }
 
   const addLog = (msg, type = 'info') => {
     setLog(prev => [...prev.slice(-49), { msg, type, ts: new Date().toLocaleTimeString() }]);
@@ -121,36 +358,39 @@ export default function GodMode() {
       <Head>
         <title>WEBAPI — Automation Tool</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
       </Head>
 
       <div className={styles.gridBg} />
       <div className={styles.shell}>
         {/* Topbar */}
         <header className={styles.topbar}>
+          {/* Logo */}
           <div className={styles.logo}>
-            <svg height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style={{verticalAlign:'middle', marginRight:8}}>
+            <svg height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg" style={{verticalAlign:'middle', marginRight:8, flexShrink:0}}>
               <defs>
-                <linearGradient id="gearGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stopColor="#00d4aa"/>
-                  <stop offset="100%" stopColor="#0ea5e9"/>
+                <linearGradient id="logoGrad" x1="0" y1="0" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" style={{stopColor:'var(--primary)'}} />
+                  <stop offset="100%" style={{stopColor:'var(--secondary)'}} />
                 </linearGradient>
               </defs>
-              <path d="M13 2l-1.5 2.6A7 7 0 0 0 9 6L6.1 5.5 3.5 8.1 4 11a7 7 0 0 0-1.4 2.5L0 15v3.7l2.6 1.5A7 7 0 0 0 4 22.5l-.5 2.9 2.6 2.6L9 27.4a7 7 0 0 0 2.5 1.4L13 31h3.7l1.5-2.6A7 7 0 0 0 20.5 27l2.9.5 2.6-2.6-.5-2.9A7 7 0 0 0 26.9 19L29 17.6V14l-2.1-1.4A7 7 0 0 0 25.5 10l.5-2.9-2.6-2.6L20.5 5A7 7 0 0 0 18 3.6L16.6 1H13z" fill="url(#gearGrad)" opacity="0.15"/>
-              <circle cx="12" cy="12" r="6.5" stroke="url(#gearGrad)" strokeWidth="1.5" fill="none"/>
-              <circle cx="20" cy="20" r="6.5" stroke="url(#gearGrad)" strokeWidth="1.5" fill="none"/>
-              <circle cx="12" cy="12" r="2" fill="url(#gearGrad)"/>
-              <circle cx="20" cy="20" r="2" fill="url(#gearGrad)"/>
-              <text x="8.5" y="15" fontFamily="monospace" fontSize="5" fill="url(#gearGrad)" fontWeight="bold">{"{"}</text>
-              <text x="14" y="15" fontFamily="monospace" fontSize="5" fill="url(#gearGrad)" fontWeight="bold">{"}"}</text>
-              <text x="16.5" y="23" fontFamily="monospace" fontSize="5" fill="url(#gearGrad)" fontWeight="bold">→</text>
+              <rect x="2" y="2" width="26" height="26" rx="7" fill="url(#logoGrad)" opacity="0.12"/>
+              <rect x="2" y="2" width="26" height="26" rx="7" stroke="url(#logoGrad)" strokeWidth="1.5"/>
+              <path d="M10 10L7 15L10 20" stroke="url(#logoGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M20 10L23 15L20 20" stroke="url(#logoGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <line x1="14" y1="9" x2="16" y2="21" stroke="url(#logoGrad)" strokeWidth="1.5" strokeLinecap="round" opacity="0.7"/>
             </svg>
             <span>WEB</span><em>API</em>
-            <span style={{fontSize:11, fontFamily:'JetBrains Mono', fontWeight:400, marginLeft:12, color:'#555570', letterSpacing:2}}>AUTOMATION TOOL</span>
+            <span style={{fontSize:10, fontFamily:'Inter, sans-serif', fontWeight:500, marginLeft:12, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase'}}>Automation</span>
           </div>
-          <div className={styles.statusPill}>
-            <div className={`${styles.dot} ${health ? styles.live : ''}`} />
-            {health ? `API LIVE · ${health.jobs} total jobs · ${health.queued} queued` : 'API OFFLINE'}
+
+          <div className={styles.topbarRight}>
+            <ThemeSwitcher current={currentTheme} onChange={handleThemeChange} />
+            <div className={styles.statusPill}>
+              <div className={`${styles.dot} ${health ? styles.live : ''}`} />
+              {health ? `API LIVE · ${health.jobs} total jobs · ${health.queued} queued` : 'API OFFLINE'}
+            </div>
           </div>
         </header>
 
@@ -188,7 +428,7 @@ export default function GodMode() {
             <div className={styles.stats}>
               {['ALL','QUEUED','RUNNING','DONE','FAILED'].map(s => (
                 <div className={styles.stat} key={s}>
-                  <div className={styles.statVal} style={{ color: STATUS_COLOR[s] || 'var(--text)' }}>{statusCounts[s]}</div>
+                  <div className={styles.statVal} style={{ color: STATUS_COLOR[s] || 'var(--primary)' }}>{statusCounts[s]}</div>
                   <div className={styles.statLabel}>{s}</div>
                 </div>
               ))}
@@ -252,7 +492,7 @@ export default function GodMode() {
                   ))}
                 </>
               ) : (
-                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 20, textAlign: 'center' }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 20, textAlign: 'center' }}>
                   Select a job to inspect
                 </div>
               )}
@@ -260,7 +500,7 @@ export default function GodMode() {
             <div className={styles.panelTitle} style={{ borderTop: '1px solid var(--border)' }}>📡 Activity Log</div>
             <div className={styles.logBox}>
               {log.length === 0 ? (
-                <div style={{ color: 'var(--muted)', fontSize: 10 }}>Waiting for activity…</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Waiting for activity…</div>
               ) : [...log].reverse().map((e, i) => (
                 <div key={i} className={styles.logEntry}>
                   <span className={styles.logTs}>{e.ts}</span>
@@ -274,3 +514,4 @@ export default function GodMode() {
     </>
   );
 }
+
