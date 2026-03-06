@@ -1,4 +1,4 @@
-// GodMode Content Script — records clicks, inputs, navigation
+// WEBAPI Content Script — records clicks, inputs, navigation
 (function () {
   let active = false;
 

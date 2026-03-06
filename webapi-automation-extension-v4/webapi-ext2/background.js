@@ -354,10 +354,10 @@ function injectRecorder() {
 
 
 // ══════════════════════════════════════════════════
-//  GODMODE SYNC  — mirror every write to the GodMode backend
+//  WEBAPI SYNC  — mirror every write to the WEBAPI backend
 // ══════════════════════════════════════════════════
 
-// Fetch settings then POST/DELETE to GodMode. Never throws — errors are silent.
+// Fetch settings then POST/DELETE to WEBAPI. Never throws — errors are silent.
 async function gmSync(method, path, body) {
   try {
     const d   = await chrome.storage.local.get('settings');
@@ -383,7 +383,7 @@ function broadcastSync(ok, label) {
 }
 
 // ══════════════════════════════════════════════════
-//  STORAGE  (local chrome.storage + GodMode sync)
+//  STORAGE  (local chrome.storage + WEBAPI sync)
 // ══════════════════════════════════════════════════
 async function saveRec(rec) {
   // 1. Save locally first (always works offline)
@@ -393,7 +393,7 @@ async function saveRec(rec) {
   i >= 0 ? recs[i] = rec : recs.unshift(rec);
   await chrome.storage.local.set({ recordings: recs });
 
-  // 2. Sync to GodMode backend
+  // 2. Sync to WEBAPI backend
   const r = await gmSync('POST', '/recordings', {
     id:       rec.id,
     name:     rec.name,
@@ -420,7 +420,7 @@ async function saveCase(c) {
   i >= 0 ? cs[i] = c : cs.unshift(c);
   await chrome.storage.local.set({ cases: cs });
 
-  // 2. Sync to GodMode
+  // 2. Sync to WEBAPI
   const r = await gmSync('POST', '/cases', {
     id:              c.id,
     recording_id:    c.recordingId || null,
@@ -459,7 +459,7 @@ async function saveResult(r) {
   if (rs.length > 100) rs = rs.slice(0, 100);
   await chrome.storage.local.set({ runResults: rs });
 
-  // 2. Sync to GodMode
+  // 2. Sync to WEBAPI
   await gmSync('POST', '/results', {
     id:       r.id,
     caseId:   r.caseId   || null,

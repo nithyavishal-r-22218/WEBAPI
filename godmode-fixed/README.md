@@ -1,4 +1,4 @@
-# ⚡ GodMode — Automation HQ
+# ⚡ WEBAPI Automation Tool
 
 Full-stack browser automation framework. Record. Queue. Execute. At scale.
 
