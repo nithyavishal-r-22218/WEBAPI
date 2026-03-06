@@ -6,11 +6,11 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 const JOB_TYPES = ['SCRAPE', 'AUTOMATE', 'SCHEDULE', 'CUSTOM'];
 
-const STATUS_COLOR = {
-  QUEUED:  '#f59e0b',
-  RUNNING: '#3b82f6',
-  DONE:    '#10b981',
-  FAILED:  '#ef4444',
+const STATUS_BADGE = {
+  QUEUED:  { bg: '#fef3c7', color: '#d97706', icon: '⏳' },
+  RUNNING: { bg: '#dbeafe', color: '#2563eb', icon: '⚡' },
+  DONE:    { bg: '#dcfce7', color: '#16a34a', icon: '✓' },
+  FAILED:  { bg: '#fee2e2', color: '#dc2626', icon: '✗' },
 };
 
 const STATUS_ICON = { QUEUED: '⏳', RUNNING: '⚡', DONE: '✓', FAILED: '✗' };
@@ -19,16 +19,16 @@ const STATUS_ICON = { QUEUED: '⏳', RUNNING: '⚡', DONE: '✓', FAILED: '✗' 
 const THEMES = {
   default: {
     name: 'Default',
-    primary: '#3D52A0',
-    bg: '#f5f5f7',
+    primary: '#6c63ff',
+    bg: '#f0eef6',
     surface: '#ffffff',
-    secondary: '#7091E6',
+    secondary: '#8b83ff',
     text: '#1a1a2e',
-    textMuted: '#8697C4',
-    border: '#ADBBDA',
-    success: '#10b981',
-    danger: '#ef4444',
-    warning: '#f59e0b',
+    textMuted: '#64648c',
+    border: '#e8e5f0',
+    success: '#16a34a',
+    danger: '#dc2626',
+    warning: '#d97706',
   },
   lavender: {
     name: 'Lavender',
@@ -39,9 +39,9 @@ const THEMES = {
     text: '#1a1a2e',
     textMuted: '#8697C4',
     border: '#ADBBDA',
-    success: '#10b981',
-    danger: '#ef4444',
-    warning: '#f59e0b',
+    success: '#16a34a',
+    danger: '#dc2626',
+    warning: '#d97706',
   },
   desert: {
     name: 'Desert',
@@ -52,9 +52,9 @@ const THEMES = {
     text: '#1a1a2e',
     textMuted: '#874F41',
     border: '#90AEAD',
-    success: '#10b981',
-    danger: '#ef4444',
-    warning: '#f59e0b',
+    success: '#16a34a',
+    danger: '#dc2626',
+    warning: '#d97706',
   },
   ocean: {
     name: 'Ocean',
@@ -65,9 +65,9 @@ const THEMES = {
     text: '#003135',
     textMuted: '#003135',
     border: '#90C9CE',
-    success: '#10b981',
-    danger: '#964734',
-    warning: '#f59e0b',
+    success: '#16a34a',
+    danger: '#dc2626',
+    warning: '#d97706',
   },
   sunset: {
     name: 'Sunset',
@@ -78,19 +78,19 @@ const THEMES = {
     text: '#1a1a2e',
     textMuted: '#874F41',
     border: '#FFA2B6',
-    success: '#10b981',
-    danger: '#ef4444',
+    success: '#16a34a',
+    danger: '#dc2626',
     warning: '#EFB11D',
   },
 };
 
 const DEFAULT_CUSTOM_COLORS = {
-  primary: '#3D52A0',
-  bg: '#f5f5f7',
+  primary: '#6c63ff',
+  bg: '#f0eef6',
   surface: '#ffffff',
-  secondary: '#7091E6',
+  secondary: '#8b83ff',
   text: '#1a1a2e',
-  border: '#ADBBDA',
+  border: '#e8e5f0',
 };
 
 function applyTheme(theme) {
@@ -101,11 +101,11 @@ function applyTheme(theme) {
   r.style.setProperty('--primary', theme.primary);
   r.style.setProperty('--secondary', theme.secondary);
   r.style.setProperty('--text', theme.text);
-  r.style.setProperty('--text-muted', theme.textMuted || '#8697C4');
+  r.style.setProperty('--text-muted', theme.textMuted || '#64648c');
   r.style.setProperty('--border', theme.border);
-  r.style.setProperty('--success', theme.success || '#10b981');
-  r.style.setProperty('--danger', theme.danger || '#ef4444');
-  r.style.setProperty('--warning', theme.warning || '#f59e0b');
+  r.style.setProperty('--success', theme.success || '#16a34a');
+  r.style.setProperty('--danger', theme.danger || '#dc2626');
+  r.style.setProperty('--warning', theme.warning || '#d97706');
 }
 
 function buildCustomTheme(colors) {
@@ -118,9 +118,9 @@ function buildCustomTheme(colors) {
     text: colors.text,
     textMuted: colors.text,
     border: colors.border,
-    success: '#10b981',
-    danger: '#ef4444',
-    warning: '#f59e0b',
+    success: '#16a34a',
+    danger: '#dc2626',
+    warning: '#d97706',
   };
 }
 
@@ -138,7 +138,6 @@ function ThemeSwitcher({ current, onChange }) {
     } catch {}
   }, []);
 
-  // Close picker when clicking outside
   useEffect(() => {
     if (!showCustom) return;
     function handleClickOutside(e) {
@@ -243,6 +242,9 @@ export default function GodMode() {
   const [filter, setFilter] = useState('ALL');
   const [log, setLog] = useState([]);
   const [currentTheme, setCurrentTheme] = useState('default');
+  const [showLaunchModal, setShowLaunchModal] = useState(false);
+  const [activeNav, setActiveNav] = useState('dashboard');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Load & apply saved theme on mount
   useEffect(() => {
@@ -312,7 +314,6 @@ export default function GodMode() {
     });
   }, [jobs]);
 
-  // Memoize status counts to avoid redundant filtering per render
   const statusCounts = useMemo(() => {
     const counts = { ALL: jobs.length, QUEUED: 0, RUNNING: 0, DONE: 0, FAILED: 0 };
     jobs.forEach(j => { if (counts[j.status] !== undefined) counts[j.status]++; });
@@ -336,6 +337,7 @@ export default function GodMode() {
       if (!r.ok) throw new Error(d.error);
       addLog(`Job ${d.jobId.slice(0, 8)}… queued [${form.type}]`, 'success');
       fetchJobs();
+      setShowLaunchModal(false);
     } catch (e) {
       setError(e.message);
       addLog(e.message, 'error');
@@ -351,7 +353,26 @@ export default function GodMode() {
     } catch (e) { addLog(e.message, 'error'); }
   }
 
-  const filtered = filter === 'ALL' ? jobs : jobs.filter(j => j.status === filter);
+  const filtered = useMemo(() => {
+    let result = filter === 'ALL' ? jobs : jobs.filter(j => j.status === filter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(j =>
+        j.id.toLowerCase().includes(q) ||
+        j.type.toLowerCase().includes(q) ||
+        j.status.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [jobs, filter, searchQuery]);
+
+  const STAT_CARDS = [
+    { key: 'ALL',     label: 'Total jobs',  icon: '📊', color: '#6c63ff' },
+    { key: 'QUEUED',  label: 'In queue',    icon: '⏳', color: '#d97706' },
+    { key: 'RUNNING', label: 'Running now', icon: '⚡', color: '#2563eb' },
+    { key: 'DONE',    label: 'Completed',   icon: '✓',  color: '#16a34a' },
+    { key: 'FAILED',  label: 'Failed',      icon: '✗',  color: '#dc2626' },
+  ];
 
   return (
     <>
@@ -359,56 +380,371 @@ export default function GodMode() {
         <title>WEBAPI — Automation Tool</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
       </Head>
 
-      <div className={styles.gridBg} />
       <div className={styles.shell}>
-        {/* Topbar */}
-        <header className={styles.topbar}>
-          {/* Logo */}
-          <div className={styles.logo}>
-            <svg height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg" style={{verticalAlign:'middle', marginRight:8, flexShrink:0}}>
+        {/* ── Icon Sidebar ── */}
+        <nav className={styles.sidebar}>
+          <div className={styles.sidebarLogo}>
+            <svg height="28" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <linearGradient id="logoGrad" x1="0" y1="0" x2="30" y2="30" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" style={{stopColor:'var(--primary)'}} />
-                  <stop offset="100%" style={{stopColor:'var(--secondary)'}} />
+                  <stop offset="0%" style={{ stopColor: 'var(--primary)' }} />
+                  <stop offset="100%" style={{ stopColor: 'var(--secondary)' }} />
                 </linearGradient>
               </defs>
-              <rect x="2" y="2" width="26" height="26" rx="7" fill="url(#logoGrad)" opacity="0.12"/>
-              <rect x="2" y="2" width="26" height="26" rx="7" stroke="url(#logoGrad)" strokeWidth="1.5"/>
-              <path d="M10 10L7 15L10 20" stroke="url(#logoGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M20 10L23 15L20 20" stroke="url(#logoGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <line x1="14" y1="9" x2="16" y2="21" stroke="url(#logoGrad)" strokeWidth="1.5" strokeLinecap="round" opacity="0.7"/>
+              <rect x="2" y="2" width="26" height="26" rx="7" fill="url(#logoGrad)" opacity="0.12" />
+              <rect x="2" y="2" width="26" height="26" rx="7" stroke="url(#logoGrad)" strokeWidth="1.5" />
+              <path d="M10 10L7 15L10 20" stroke="url(#logoGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M20 10L23 15L20 20" stroke="url(#logoGrad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              <line x1="14" y1="9" x2="16" y2="21" stroke="url(#logoGrad)" strokeWidth="1.5" strokeLinecap="round" opacity="0.7" />
             </svg>
-            <span>WEB</span><em>API</em>
-            <span style={{fontSize:10, fontFamily:'Inter, sans-serif', fontWeight:500, marginLeft:12, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase'}}>Automation</span>
           </div>
 
-          <div className={styles.topbarRight}>
-            <ThemeSwitcher current={currentTheme} onChange={handleThemeChange} />
-            <div className={styles.statusPill}>
+          <div className={styles.sidebarNav}>
+            {[
+              { key: 'dashboard', icon: '🏠', label: 'Dashboard' },
+              { key: 'launch',    icon: '⚡', label: 'Launch Job' },
+              { key: 'jobs',      icon: '📋', label: 'Job List' },
+              { key: 'activity',  icon: '📊', label: 'Activity Log' },
+              { key: 'themes',    icon: '⚙️', label: 'Settings' },
+            ].map(({ key, icon, label }) => (
+              <button
+                key={key}
+                className={`${styles.sidebarBtn} ${activeNav === key ? styles.sidebarBtnActive : ''}`}
+                onClick={() => {
+                  if (key === 'launch') {
+                    setShowLaunchModal(true);
+                    setActiveNav('launch');
+                  } else {
+                    setActiveNav(key);
+                  }
+                }}
+                title={label}
+                aria-label={label}
+              >
+                <span className={styles.sidebarIcon}>{icon}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className={styles.sidebarBottom}>
+            <div className={styles.statusDot} title={health ? 'API Online' : 'API Offline'}>
               <div className={`${styles.dot} ${health ? styles.live : ''}`} />
-              {health ? `API LIVE · ${health.jobs} total jobs · ${health.queued} queued` : 'API OFFLINE'}
             </div>
           </div>
-        </header>
+        </nav>
 
-        <div className={styles.main}>
-          {/* LEFT: Form + Stats */}
-          <aside className={styles.panelLeft}>
-            <div className={styles.panelTitle}>⚡ Launch Job</div>
-            <div className={styles.jobForm}>
-              <div>
-                <label className={styles.label}>Job Type</label>
-                <select className={styles.select} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+        {/* ── Main Area ── */}
+        <div className={styles.mainArea}>
+          {/* Top Bar */}
+          <header className={styles.topbar}>
+            <div className={styles.searchBar}>
+              <span className={styles.searchIcon}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search jobs..."
+                className={styles.searchInput}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                aria-label="Search jobs"
+              />
+            </div>
+            <div className={styles.topbarRight}>
+              <ThemeSwitcher current={currentTheme} onChange={handleThemeChange} />
+              <button
+                className={styles.iconBtn}
+                title={health ? `API LIVE · ${health.jobs} total · ${health.queued} queued` : 'API OFFLINE'}
+                aria-label="API Status"
+              >
+                {health ? '🟢' : '🔴'}
+              </button>
+              <div className={styles.avatar} title="WEBAPI User">
+                <span>WA</span>
+              </div>
+            </div>
+          </header>
+
+          {/* Scrollable Content */}
+          <div className={styles.content}>
+            {/* Welcome Section */}
+            <div className={styles.welcomeSection}>
+              <div className={styles.welcomeText}>
+                <h1 className={styles.welcomeTitle}>Welcome! 👋</h1>
+                <p className={styles.welcomeSub}>Automate tasks and achieve more every day.</p>
+              </div>
+              <div className={styles.quickActions}>
+                {[
+                  { icon: '✨', name: 'Scrape Bot',  desc: 'Web Scraping',      type: 'SCRAPE'   },
+                  { icon: '🤖', name: 'AutoRunner',  desc: 'Task Automation',   type: 'AUTOMATE' },
+                  { icon: '🗓️', name: 'Scheduler',   desc: 'Scheduled Jobs',    type: 'SCHEDULE' },
+                ].map(({ icon, name, desc, type }) => (
+                  <button
+                    key={type}
+                    className={styles.quickActionCard}
+                    onClick={() => { setForm(f => ({ ...f, type })); setShowLaunchModal(true); setActiveNav('launch'); }}
+                  >
+                    <span className={styles.qaIcon}>{icon}</span>
+                    <div className={styles.qaText}>
+                      <div className={styles.qaName}>{name}</div>
+                      <div className={styles.qaDesc}>{desc}</div>
+                    </div>
+                    <span className={styles.qaArrow}>›</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Stat Cards */}
+            <div className={styles.statsRow}>
+              {STAT_CARDS.map(({ key, label, icon, color }) => (
+                <div
+                  key={key}
+                  className={styles.statCard}
+                  style={{ borderTopColor: color }}
+                  onClick={() => setFilter(key)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && setFilter(key)}
+                  aria-label={`Filter by ${key}`}
+                >
+                  <div className={styles.statCardHeader}>
+                    <span className={styles.statCardIcon} style={{ color }}>{icon}</span>
+                    <span className={styles.statCardKey} style={{ color }}>{key}</span>
+                  </div>
+                  <div className={styles.statCardVal} style={{ color }}>{statusCounts[key]}</div>
+                  <div className={styles.statCardLabel}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Jobs + Detail Panel */}
+            <div className={styles.jobsSection}>
+              {/* Jobs Card */}
+              <div className={styles.jobsCard}>
+                <div className={styles.jobsCardHeader}>
+                  <div className={styles.jobsCardTitle}>
+                    <span>Jobs List</span>
+                    <span className={styles.jobsCount}>{filtered.length}</span>
+                  </div>
+                  <button className={styles.newJobBtn} onClick={() => { setShowLaunchModal(true); setActiveNav('launch'); }}>
+                    + New Job
+                  </button>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className={styles.filterBar}>
+                  {['ALL', 'QUEUED', 'RUNNING', 'DONE', 'FAILED'].map(f => (
+                    <button
+                      key={f}
+                      className={`${styles.filterBtn} ${filter === f ? styles.filterBtnActive : ''}`}
+                      onClick={() => setFilter(f)}
+                    >
+                      {STATUS_ICON[f] || '◎'} {f}
+                      {f !== 'ALL' && statusCounts[f] > 0 && (
+                        <span className={styles.filterCount}>{statusCounts[f]}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Table */}
+                <div className={styles.tableWrapper}>
+                  {filtered.length === 0 ? (
+                    <div className={styles.emptyState}>
+                      <div className={styles.emptyIcon}>∅</div>
+                      <div className={styles.emptyText}>
+                        No jobs {filter !== 'ALL' ? `with status ${filter}` : 'yet'}
+                      </div>
+                      <button
+                        className={styles.emptyNewBtn}
+                        onClick={() => { setShowLaunchModal(true); setActiveNav('launch'); }}
+                      >
+                        + Launch your first job
+                      </button>
+                    </div>
+                  ) : (
+                    <table className={styles.jobTable}>
+                      <thead>
+                        <tr>
+                          <th>NAME</th>
+                          <th>STATUS</th>
+                          <th>TYPE</th>
+                          <th>CREATED</th>
+                          <th>ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map(job => {
+                          const badge = STATUS_BADGE[job.status] || { bg: '#f5f5f5', color: '#666', icon: '?' };
+                          return (
+                            <tr
+                              key={job.id}
+                              className={`${styles.jobRow} ${selected?.id === job.id ? styles.jobRowActive : ''}`}
+                              onClick={() => setSelected(job)}
+                            >
+                              <td>
+                                <span className={styles.jobId}>{job.id.slice(0, 8)}…</span>
+                              </td>
+                              <td>
+                                <span className={styles.statusBadge} style={{ background: badge.bg, color: badge.color }}>
+                                  {badge.icon} {job.status}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={styles.typeTag}>{job.type}</span>
+                              </td>
+                              <td>
+                                <span className={styles.timeText}>{timeAgo(job.createdAt)}</span>
+                              </td>
+                              <td onClick={e => e.stopPropagation()}>
+                                <div className={styles.actionBtns}>
+                                  <button
+                                    className={styles.actionBtn}
+                                    onClick={() => setSelected(job)}
+                                    title="View details"
+                                    aria-label="View job details"
+                                  >
+                                    👁
+                                  </button>
+                                  {job.status === 'QUEUED' && (
+                                    <button
+                                      className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                                      onClick={() => cancelJob(job.id)}
+                                      title="Cancel job"
+                                      aria-label="Cancel job"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+
+              {/* Job Detail Panel (slide-in) */}
+              {selected && (
+                <div className={styles.detailPanel}>
+                  <div className={styles.detailHeader}>
+                    <div>
+                      <div className={styles.detailTitle}>{selected.id.slice(0, 14)}…</div>
+                      <span
+                        className={styles.statusBadge}
+                        style={{
+                          background: (STATUS_BADGE[selected.status] || { bg: '#f5f5f5' }).bg,
+                          color: (STATUS_BADGE[selected.status] || { color: '#666' }).color,
+                        }}
+                      >
+                        {(STATUS_BADGE[selected.status] || { icon: '?' }).icon} {selected.status}
+                      </span>
+                    </div>
+                    <button className={styles.closeDetailBtn} onClick={() => setSelected(null)} aria-label="Close detail panel">
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className={styles.detailBody}>
+                    {[
+                      ['Type',      selected.type],
+                      ['Status',    selected.status],
+                      ['Created',   selected.createdAt   ? new Date(selected.createdAt).toLocaleString()   : '—'],
+                      ['Started',   selected.startedAt   ? new Date(selected.startedAt).toLocaleString()   : '—'],
+                      ['Completed', selected.completedAt ? new Date(selected.completedAt).toLocaleString() : '—'],
+                    ].map(([k, v]) => (
+                      <div key={k} className={styles.detailRow}>
+                        <div className={styles.detailKey}>{k}</div>
+                        <div className={styles.detailVal}>{v}</div>
+                      </div>
+                    ))}
+
+                    <div className={styles.detailRow}>
+                      <div className={styles.detailKey}>Payload</div>
+                      <pre className={styles.codeBlock}>{JSON.stringify(selected.payload, null, 2)}</pre>
+                    </div>
+
+                    {selected.result && (
+                      <div className={styles.detailRow}>
+                        <div className={styles.detailKey}>Result</div>
+                        <pre className={styles.codeBlock}>{JSON.stringify(selected.result, null, 2)}</pre>
+                      </div>
+                    )}
+
+                    {selected.error && (
+                      <div className={styles.detailRow}>
+                        <div className={styles.detailKey}>Error</div>
+                        <pre className={`${styles.codeBlock} ${styles.codeBlockError}`}>{selected.error}</pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Activity Log */}
+            <div className={styles.activityCard}>
+              <div className={styles.activityHeader}>
+                <span className={styles.activityTitle}>📡 Activity Log</span>
+                <span className={styles.activityCount}>{log.length} events</span>
+              </div>
+              <div className={styles.logBox}>
+                {log.length === 0 ? (
+                  <div className={styles.logEmpty}>Waiting for activity…</div>
+                ) : (
+                  [...log].reverse().map((e, i) => (
+                    <div key={i} className={styles.logEntry}>
+                      <span className={styles.logTs}>{e.ts}</span>
+                      <span className={`${styles.logMsg} ${styles[e.type] || ''}`}>{e.msg}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Launch Job Modal ── */}
+      {showLaunchModal && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => { setShowLaunchModal(false); setActiveNav('dashboard'); }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Launch new job"
+        >
+          <div className={styles.modal} onClick={e => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <span className={styles.modalTitle}>⚡ Launch New Job</span>
+              <button
+                className={styles.modalClose}
+                onClick={() => { setShowLaunchModal(false); setActiveNav('dashboard'); }}
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Job Type</label>
+                <select
+                  className={styles.formSelect}
+                  value={form.type}
+                  onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                >
                   {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
-              <div>
-                <label className={styles.label}>Payload (JSON)</label>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Payload (JSON)</label>
                 <textarea
-                  className={styles.textarea}
+                  className={styles.formTextarea}
                   value={form.payload}
                   onChange={e => setForm(f => ({ ...f, payload: e.target.value }))}
                   spellCheck={false}
@@ -423,94 +759,9 @@ export default function GodMode() {
                 {submitting ? 'QUEUING…' : '▶ RUN JOB'}
               </button>
             </div>
-
-            {/* Stats — all 5 statuses */}
-            <div className={styles.stats}>
-              {['ALL','QUEUED','RUNNING','DONE','FAILED'].map(s => (
-                <div className={styles.stat} key={s}>
-                  <div className={styles.statVal} style={{ color: STATUS_COLOR[s] || 'var(--primary)' }}>{statusCounts[s]}</div>
-                  <div className={styles.statLabel}>{s}</div>
-                </div>
-              ))}
-            </div>
-          </aside>
-
-          {/* CENTER: Job List */}
-          <main className={styles.panelCenter}>
-            <div className={styles.filterBar}>
-              {['ALL','QUEUED','RUNNING','DONE','FAILED'].map(f => (
-                <button key={f} className={`${styles.filterBtn} ${filter === f ? styles.active : ''}`} onClick={() => setFilter(f)}>
-                  {STATUS_ICON[f] || '◎'} {f} {f !== 'ALL' && `(${statusCounts[f]})`}
-                </button>
-              ))}
-            </div>
-            <div className={styles.jobList}>
-              {filtered.length === 0 ? (
-                <div className={styles.emptyState}>
-                  <div className={styles.icon}>∅</div>
-                  <div>No jobs {filter !== 'ALL' ? `with status ${filter}` : 'yet'}</div>
-                </div>
-              ) : filtered.map(job => (
-                <div key={job.id} className={`${styles.jobRow} ${selected?.id === job.id ? styles.active : ''}`} onClick={() => setSelected(job)}>
-                  <span className={styles.statusBadge} style={{ background: STATUS_COLOR[job.status] + '18', color: STATUS_COLOR[job.status] }}>
-                    {STATUS_ICON[job.status]} {job.status}
-                  </span>
-                  <div>
-                    <div className={styles.jobId}>{job.id.slice(0, 8)}…</div>
-                    <div className={styles.jobMeta}><span className={styles.jobTypeTag}>{job.type}</span> · {timeAgo(job.createdAt)}</div>
-                  </div>
-                  <div className={styles.jobTime}>{job.completedAt ? timeAgo(job.completedAt) : '—'}</div>
-                  {job.status === 'QUEUED' && (
-                    <button className={styles.cancelBtn} onClick={e => { e.stopPropagation(); cancelJob(job.id); }}>✕</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </main>
-
-          {/* RIGHT: Detail + Log */}
-          <aside className={styles.panelRight}>
-            <div className={styles.panelTitle}>🔍 Job Detail</div>
-            <div className={styles.detailBox}>
-              {selected ? (
-                <>
-                  {[
-                    ['ID', selected.id],
-                    ['Type', selected.type],
-                    ['Status', selected.status],
-                    ['Created', selected.createdAt],
-                    ['Started', selected.startedAt || '—'],
-                    ['Completed', selected.completedAt || '—'],
-                    ['Payload', JSON.stringify(selected.payload, null, 2)],
-                    ['Result', selected.result ? JSON.stringify(selected.result, null, 2) : '—'],
-                    ['Error', selected.error || '—'],
-                  ].map(([k, v]) => (
-                    <div key={k}>
-                      <div className={styles.detailKey}>{k}</div>
-                      <div className={styles.detailVal}>{v}</div>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 20, textAlign: 'center' }}>
-                  Select a job to inspect
-                </div>
-              )}
-            </div>
-            <div className={styles.panelTitle} style={{ borderTop: '1px solid var(--border)' }}>📡 Activity Log</div>
-            <div className={styles.logBox}>
-              {log.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Waiting for activity…</div>
-              ) : [...log].reverse().map((e, i) => (
-                <div key={i} className={styles.logEntry}>
-                  <span className={styles.logTs}>{e.ts}</span>
-                  <span className={`${styles.logMsg} ${styles[e.type] || ''}`}>{e.msg}</span>
-                </div>
-              ))}
-            </div>
-          </aside>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
