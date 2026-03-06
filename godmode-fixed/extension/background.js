@@ -1,6 +1,5 @@
 // GodMode Background Service Worker
-const API = 'http://localhost:4000';
-const API_KEY = 'godmode-dev-key';
+const API = process.env.GODMODE_API_URL || 'http://localhost:4000';
 
 let recording = false;
 let recordedSteps = [];
@@ -43,7 +42,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function sendJobToAPI(steps) {
   const res = await fetch(`${API}/run`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'AUTOMATE', payload: { steps, source: 'chrome_extension' } }),
   });
   return await res.json();

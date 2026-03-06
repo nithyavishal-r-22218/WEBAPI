@@ -27,7 +27,7 @@ open http://localhost:3000
 
 ## API Reference
 
-All requests require: `x-api-key: godmode-dev-key` header
+All requests require: `x-api-key: <GODMODE_API_KEY>` header
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -68,8 +68,9 @@ All requests require: `x-api-key: godmode-dev-key` header
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GODMODE_API_KEY` | `godmode-dev-key` | API authentication key |
+| `GODMODE_API_KEY` | *(required)* | API authentication key — **must be set in production** |
 | `PORT` | `4000` | Backend port |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed CORS origins |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | Dashboard → API URL |
 
 ## Production Upgrades (Next Steps)
