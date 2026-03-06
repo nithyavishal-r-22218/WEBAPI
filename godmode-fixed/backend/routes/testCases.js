@@ -14,8 +14,14 @@ function upsertTestCase(req, res) {
   if (!id) return res.status(400).json({ error: '`id` is required' });
 
   if (!testCases.has(id) && testCases.size >= MAX_TEST_CASES) {
-    const oldest = [...testCases.values()].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))[0];
-    if (oldest) testCases.delete(oldest.id);
+    // Find oldest entry with O(n) linear scan instead of sorting
+    let oldestId = null;
+    let oldestTime = Infinity;
+    for (const [k, v] of testCases) {
+      const t = new Date(v.createdAt).getTime();
+      if (t < oldestTime) { oldestTime = t; oldestId = k; }
+    }
+    if (oldestId) testCases.delete(oldestId);
   }
 
   const tc = {

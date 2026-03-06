@@ -15,8 +15,14 @@ router.post('/recordings', requireAuth, (req, res) => {
   if (!id) return res.status(400).json({ error: '`id` is required' });
 
   if (!recordings.has(id) && recordings.size >= MAX_RECORDINGS) {
-    const oldest = [...recordings.values()].sort((a, b) => new Date(a.at) - new Date(b.at))[0];
-    if (oldest) recordings.delete(oldest.id);
+    // Find oldest entry with O(n) linear scan instead of sorting
+    let oldestId = null;
+    let oldestTime = Infinity;
+    for (const [k, v] of recordings) {
+      const t = new Date(v.at).getTime();
+      if (t < oldestTime) { oldestTime = t; oldestId = k; }
+    }
+    if (oldestId) recordings.delete(oldestId);
   }
 
   const rec = {

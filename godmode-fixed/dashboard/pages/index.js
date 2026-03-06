@@ -68,10 +68,11 @@ export default function GodMode() {
 
   // Sync selected job with latest data when jobs refresh
   useEffect(() => {
-    if (selected) {
-      const updated = jobs.find(j => j.id === selected.id);
-      if (updated) setSelected(updated);
-    }
+    setSelected(prev => {
+      if (!prev) return prev;
+      const updated = jobs.find(j => j.id === prev.id);
+      return updated || prev;
+    });
   }, [jobs]);
 
   // Memoize status counts to avoid redundant filtering per render
