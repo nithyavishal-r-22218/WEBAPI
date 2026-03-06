@@ -36,6 +36,17 @@ All requests require: `x-api-key: godmode-dev-key` header
 | GET | `/jobs` | List all jobs |
 | GET | `/jobs/:id` | Get job status + result |
 | DELETE | `/jobs/:id` | Cancel a queued job |
+| POST | `/recordings` | Upsert a recording |
+| GET | `/recordings` | List all recordings (sorted by `at` desc) |
+| DELETE | `/recordings/:id` | Delete a recording |
+| POST | `/cases` | Upsert a test case (alias of `/test-cases`) |
+| GET | `/cases` | List all test cases (alias of `/test-cases`) |
+| DELETE | `/cases/:id` | Delete a test case (alias of `/test-cases/:id`) |
+| POST | `/test-cases` | Upsert a test case |
+| GET | `/test-cases` | List all test cases (sorted by `createdAt` desc) |
+| DELETE | `/test-cases/:id` | Delete a test case |
+| POST | `/results` | Append a test result (keep last 500) |
+| GET | `/results` | List test results (last 100, sorted by `t0` desc) |
 
 ### POST /run — Job Types
 
