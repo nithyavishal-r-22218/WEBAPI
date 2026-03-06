@@ -16,7 +16,7 @@ const sv  = (id,v) => { const e=$(id); if(e) e.value = v; };
 const uid = () => 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 const dur = ms => ms < 1000 ? ms + 'ms' : (ms/1000).toFixed(2) + 's';
 
-// ── GodMode API sync ─────────────────────────────────────────────────────────
+// ── WEBAPI API sync ─────────────────────────────────────────────────────────
 async function gmPost(path, body) {
   try {
     const cfg = G.settings;
@@ -58,7 +58,7 @@ async function gmGet(path) {
   } catch { return null; }
 }
 
-// Sync a recording to GodMode (upsert via POST /recordings)
+// Sync a recording to WEBAPI (upsert via POST /recordings)
 async function syncRecToGodMode(rec) {
   const r = await gmPost('/recordings', rec);
   if (r.ok) {
@@ -69,13 +69,13 @@ async function syncRecToGodMode(rec) {
   return r;
 }
 
-// Sync a test case to GodMode
+// Sync a test case to WEBAPI
 async function syncCaseToGodMode(c) {
   const r = await gmPost('/test-cases', c);
   return r;
 }
 
-// Sync a run result to GodMode
+// Sync a run result to WEBAPI
 async function syncResultToGodMode(result) {
   const r = await gmPost('/results', result);
   return r;
@@ -111,7 +111,7 @@ function bg(type, data={}) {
 // ═══════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════
-// Pull recordings/cases/results from GodMode and merge into local state
+// Pull recordings/cases/results from WEBAPI and merge into local state
 async function pullFromGodMode() {
   try {
     const [recsData, casesData, resultsData] = await Promise.all([
@@ -154,7 +154,7 @@ async function pullFromGodMode() {
 
     if (merged) {
       renderAll();
-      toast('↓ Synced from GodMode', 'info');
+      toast('↓ Synced from WEBAPI', 'info');
     }
   } catch(e) {
     console.log('[WebAPI] GodMode pull failed (offline?):', e.message);
@@ -184,7 +184,7 @@ async function boot() {
     renderAll();
     checkApi(false);
     chrome.runtime.onMessage.addListener(onBgMsg);
-    // Pull data from GodMode in background
+    // Pull data from WEBAPI in background
     pullFromGodMode();
   } catch(err) {
     console.error('WebAPI boot error:', err);
@@ -281,7 +281,7 @@ function onBgMsg(msg) {
     G.live.network.push(msg.net);
     renderNetCalls();
   }
-  // GodMode sync status feedback
+  // WEBAPI sync status feedback
   if (msg.type === 'SYNC_STATUS') {
     const pill = $('syncPill');
     const txt  = $('syncTxt');
@@ -292,7 +292,7 @@ function onBgMsg(msg) {
       clearTimeout(G._syncTimer);
       G._syncTimer = setTimeout(() => {
         pill.className = 'sync-pill';
-        txt.textContent = 'GodMode';
+        txt.textContent = 'WEBAPI';
       }, 3000);
     } else {
       pill.className = 'sync-pill fail';
@@ -370,7 +370,7 @@ async function persistRec(rec) {
   $('saveRecBtn').disabled = false;
   updateCounts();
   renderLibrary();
-  toast('✓ ' + rec.steps.length + ' steps saved — syncing to GodMode…', 'pass');
+  toast('✓ ' + rec.steps.length + ' steps saved — syncing to WEBAPI…', 'pass');
 }
 
 // Manual re-save button (after renaming etc.)
@@ -529,7 +529,7 @@ function renderLibrary() {
 }
 
 async function deleteRec(id) {
-  await bg('DEL_REC', {id});  // deletes locally + syncs DELETE to GodMode
+  await bg('DEL_REC', {id});  // deletes locally + syncs DELETE to WEBAPI
   G.recordings = G.recordings.filter(r => r.id !== id);
   renderLibrary(); updateCounts();
   toast('Deleted', 'info');
@@ -808,7 +808,7 @@ async function submitCase() {
   i >= 0 ? G.cases[i] = tc : G.cases.unshift(tc);
   renderTests(); updateCounts();
   closeModal('caseModal');
-  toast('Saved & syncing to GodMode…', 'pass');
+  toast('Saved & syncing to WEBAPI…', 'pass');
 }
 
 async function runCase(id) {
@@ -831,7 +831,7 @@ async function runCase(id) {
   renderTests(); renderResults(); updateCounts();
   showRunResult(c, r);
   toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + c.name, r.pass ? 'pass' : 'fail');
-  // Sync result + updated case to GodMode
+  // Sync result + updated case to WEBAPI
   syncResultToGodMode(fullResult);
   syncCaseToGodMode({ ...c, lastRun: r.pass?'pass':'fail', lastMs: r.ms });
 }
@@ -919,12 +919,12 @@ async function checkApi(verbose) {
   const syncPill = $('syncPill'), syncTxt = $('syncTxt');
   if (r?.ok) {
     pill.classList.add('live');  txt.textContent = 'Live';
-    if (syncPill) { syncPill.className = 'sync-pill live'; syncTxt.textContent = 'GodMode ✓'; }
-    if (verbose) toast('✓ Connected to GodMode at ' + G.settings.url, 'pass');
+    if (syncPill) { syncPill.className = 'sync-pill live'; syncTxt.textContent = 'WEBAPI ✓'; }
+    if (verbose) toast('✓ Connected to WEBAPI at ' + G.settings.url, 'pass');
   } else {
     pill.classList.remove('live'); txt.textContent = 'Offline';
-    if (syncPill) { syncPill.className = 'sync-pill fail'; syncTxt.textContent = 'GodMode ✗'; }
-    if (verbose) toast('✗ GodMode offline — recordings will queue locally', 'fail');
+    if (syncPill) { syncPill.className = 'sync-pill fail'; syncTxt.textContent = 'WEBAPI ✗'; }
+    if (verbose) toast('✗ WEBAPI offline — recordings will queue locally', 'fail');
   }
 }
 

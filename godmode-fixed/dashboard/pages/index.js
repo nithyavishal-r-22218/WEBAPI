@@ -119,7 +119,7 @@ export default function GodMode() {
   return (
     <>
       <Head>
-        <title>GodMode — Automation HQ</title>
+        <title>WEBAPI — Automation Tool</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       </Head>
@@ -129,8 +129,24 @@ export default function GodMode() {
         {/* Topbar */}
         <header className={styles.topbar}>
           <div className={styles.logo}>
-            <span>GOD</span><em>MODE</em>
-            <span style={{fontSize:11, fontFamily:'JetBrains Mono', fontWeight:400, marginLeft:12, color:'#555570', letterSpacing:2}}>AUTOMATION HQ</span>
+            <svg height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style={{verticalAlign:'middle', marginRight:8}}>
+              <defs>
+                <linearGradient id="gearGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#00d4aa"/>
+                  <stop offset="100%" stopColor="#0ea5e9"/>
+                </linearGradient>
+              </defs>
+              <path d="M13 2l-1.5 2.6A7 7 0 0 0 9 6L6.1 5.5 3.5 8.1 4 11a7 7 0 0 0-1.4 2.5L0 15v3.7l2.6 1.5A7 7 0 0 0 4 22.5l-.5 2.9 2.6 2.6L9 27.4a7 7 0 0 0 2.5 1.4L13 31h3.7l1.5-2.6A7 7 0 0 0 20.5 27l2.9.5 2.6-2.6-.5-2.9A7 7 0 0 0 26.9 19L29 17.6V14l-2.1-1.4A7 7 0 0 0 25.5 10l.5-2.9-2.6-2.6L20.5 5A7 7 0 0 0 18 3.6L16.6 1H13z" fill="url(#gearGrad)" opacity="0.15"/>
+              <circle cx="12" cy="12" r="6.5" stroke="url(#gearGrad)" strokeWidth="1.5" fill="none"/>
+              <circle cx="20" cy="20" r="6.5" stroke="url(#gearGrad)" strokeWidth="1.5" fill="none"/>
+              <circle cx="12" cy="12" r="2" fill="url(#gearGrad)"/>
+              <circle cx="20" cy="20" r="2" fill="url(#gearGrad)"/>
+              <text x="8.5" y="15" fontFamily="monospace" fontSize="5" fill="url(#gearGrad)" fontWeight="bold">{"{"}</text>
+              <text x="14" y="15" fontFamily="monospace" fontSize="5" fill="url(#gearGrad)" fontWeight="bold">{"}"}</text>
+              <text x="16.5" y="23" fontFamily="monospace" fontSize="5" fill="url(#gearGrad)" fontWeight="bold">→</text>
+            </svg>
+            <span>WEB</span><em>API</em>
+            <span style={{fontSize:11, fontFamily:'JetBrains Mono', fontWeight:400, marginLeft:12, color:'#555570', letterSpacing:2}}>AUTOMATION TOOL</span>
           </div>
           <div className={styles.statusPill}>
             <div className={`${styles.dot} ${health ? styles.live : ''}`} />

@@ -1,4 +1,4 @@
-// GodMode Background Service Worker
+// WEBAPI Background Service Worker
 // GODMODE_API_URL can be overridden at build time via a bundler (e.g., webpack DefinePlugin)
 const API = (typeof GODMODE_API_URL !== 'undefined' ? GODMODE_API_URL : null) || 'http://localhost:4000';
 
