@@ -65,9 +65,10 @@
     }
 
     // Init state
-    chrome.runtime.sendMessage({ type: 'GET_STATE' }, ({ recording: r, steps }) => {
-      recording = r;
-      stepCount = steps;
+    chrome.runtime.sendMessage({ type: 'GET_STATE' }, (res) => {
+      if (chrome.runtime.lastError || !res) return;
+      recording = res.recording;
+      stepCount = res.steps;
       updateUI();
     });
 

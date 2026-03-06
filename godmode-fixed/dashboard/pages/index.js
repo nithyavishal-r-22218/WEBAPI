@@ -1,10 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Head from 'next/head';
+import styles from '../styles/godmode.module.css';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'godmode-dev-key';
-
-const headers = { 'Content-Type': 'application/json', 'x-api-key': API_KEY };
 
 const JOB_TYPES = ['SCRAPE', 'AUTOMATE', 'SCHEDULE', 'CUSTOM'];
 
@@ -41,10 +39,14 @@ export default function GodMode() {
 
   const fetchJobs = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/jobs`, { headers });
+      const r = await fetch(`${API}/jobs`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
       const d = await r.json();
       setJobs(d.jobs || []);
-    } catch { /* silently retry */ }
+    } catch (err) {
+      if (process.env.NODE_ENV === 'development') console.warn('fetchJobs failed:', err);
+    }
   }, []);
 
   const fetchHealth = useCallback(async () => {
@@ -64,6 +66,22 @@ export default function GodMode() {
     return () => clearInterval(t);
   }, [fetchJobs, fetchHealth]);
 
+  // Sync selected job with latest data when jobs refresh
+  useEffect(() => {
+    setSelected(prev => {
+      if (!prev) return prev;
+      const updated = jobs.find(j => j.id === prev.id);
+      return updated || prev;
+    });
+  }, [jobs]);
+
+  // Memoize status counts to avoid redundant filtering per render
+  const statusCounts = useMemo(() => {
+    const counts = { ALL: jobs.length, QUEUED: 0, RUNNING: 0, DONE: 0, FAILED: 0 };
+    jobs.forEach(j => { if (counts[j.status] !== undefined) counts[j.status]++; });
+    return counts;
+  }, [jobs]);
+
   async function runJob() {
     setError('');
     let payload;
@@ -73,7 +91,8 @@ export default function GodMode() {
     setSubmitting(true);
     try {
       const r = await fetch(`${API}/run`, {
-        method: 'POST', headers,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: form.type, payload }),
       });
       const d = await r.json();
@@ -89,7 +108,7 @@ export default function GodMode() {
 
   async function cancelJob(id) {
     try {
-      await fetch(`${API}/jobs/${id}`, { method: 'DELETE', headers });
+      await fetch(`${API}/jobs/${id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
       addLog(`Job ${id.slice(0, 8)}… cancelled`, 'warn');
       fetchJobs();
     } catch (e) { addLog(e.message, 'error'); }
@@ -105,199 +124,43 @@ export default function GodMode() {
         <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
       </Head>
 
-      <style>{`
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-          --bg: #050508;
-          --surface: #0d0d14;
-          --border: #1a1a2e;
-          --accent: #6c63ff;
-          --accent2: #00d4aa;
-          --text: #e8e8f0;
-          --muted: #555570;
-          --danger: #ef4444;
-        }
-        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono', monospace; min-height: 100vh; overflow-x: hidden; }
-        body::before {
-          content: '';
-          position: fixed; inset: 0;
-          background: radial-gradient(ellipse at 20% 50%, #6c63ff0a 0%, transparent 60%),
-                      radial-gradient(ellipse at 80% 20%, #00d4aa08 0%, transparent 50%);
-          pointer-events: none;
-        }
-        .grid-bg {
-          position: fixed; inset: 0;
-          background-image: linear-gradient(rgba(108,99,255,0.03) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(108,99,255,0.03) 1px, transparent 1px);
-          background-size: 40px 40px;
-          pointer-events: none;
-        }
-        /* Layout */
-        .shell { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
-        .topbar {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 28px; border-bottom: 1px solid var(--border);
-          background: rgba(5,5,8,0.9); backdrop-filter: blur(12px);
-          position: sticky; top: 0; z-index: 100;
-        }
-        .logo { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-        .logo span { color: var(--accent); }
-        .logo em { color: var(--accent2); font-style: normal; }
-        .status-pill {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 11px; color: var(--muted); padding: 6px 12px;
-          border: 1px solid var(--border); border-radius: 99px;
-        }
-        .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-        .dot.live { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-
-        .main { display: grid; grid-template-columns: 340px 1fr 300px; gap: 0; height: calc(100vh - 57px); overflow: hidden; }
-
-        /* Left Panel */
-        .panel-left { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
-        .panel-title { padding: 16px 20px; font-size: 10px; letter-spacing: 2px; color: var(--muted); border-bottom: 1px solid var(--border); text-transform: uppercase; }
-
-        .job-form { padding: 20px; display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid var(--border); }
-        select, textarea, input {
-          background: var(--surface); border: 1px solid var(--border); color: var(--text);
-          font-family: 'JetBrains Mono', monospace; font-size: 12px;
-          border-radius: 6px; padding: 10px 12px; width: 100%; outline: none;
-          transition: border-color 0.2s;
-        }
-        select:focus, textarea:focus, input:focus { border-color: var(--accent); }
-        textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
-        label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; display: block; }
-
-        .btn-run {
-          background: var(--accent); color: #fff; border: none; border-radius: 6px;
-          padding: 12px; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-          cursor: pointer; letter-spacing: 0.5px; transition: all 0.2s;
-          position: relative; overflow: hidden;
-        }
-        .btn-run:hover { background: #7c75ff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(108,99,255,0.4); }
-        .btn-run:active { transform: translateY(0); }
-        .btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .btn-run.loading::after {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-          animation: shimmer 1s infinite;
-        }
-        @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
-
-        .error-msg { color: var(--danger); font-size: 11px; padding: 8px 10px; background: rgba(239,68,68,0.08); border-radius: 4px; border-left: 2px solid var(--danger); }
-
-        /* Stats */
-        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
-        .stat { background: var(--surface); padding: 14px 16px; }
-        .stat-val { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; }
-        .stat-label { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
-
-        /* Center Panel */
-        .panel-center { display: flex; flex-direction: column; overflow: hidden; }
-        .filter-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); }
-        .filter-btn {
-          padding: 12px 18px; font-family: 'JetBrains Mono', monospace; font-size: 11px;
-          background: none; border: none; color: var(--muted); cursor: pointer;
-          border-bottom: 2px solid transparent; transition: all 0.2s;
-        }
-        .filter-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-        .filter-btn:hover:not(.active) { color: var(--text); }
-
-        .job-list { flex: 1; overflow-y: auto; }
-        .job-list::-webkit-scrollbar { width: 4px; }
-        .job-list::-webkit-scrollbar-track { background: transparent; }
-        .job-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-        .job-row {
-          display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px;
-          align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border);
-          cursor: pointer; transition: background 0.15s;
-        }
-        .job-row:hover { background: rgba(108,99,255,0.04); }
-        .job-row.active { background: rgba(108,99,255,0.08); border-left: 2px solid var(--accent); }
-
-        .status-badge {
-          display: inline-flex; align-items: center; gap: 5px;
-          padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
-          letter-spacing: 0.5px;
-        }
-        .job-id { font-size: 11px; color: var(--text); }
-        .job-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
-        .job-type-tag { font-size: 10px; color: var(--accent2); letter-spacing: 1px; }
-        .job-time { font-size: 10px; color: var(--muted); white-space: nowrap; }
-
-        .cancel-btn {
-          background: none; border: 1px solid var(--border); color: var(--muted);
-          font-size: 10px; font-family: 'JetBrains Mono', monospace;
-          padding: 4px 8px; border-radius: 4px; cursor: pointer; transition: all 0.2s;
-        }
-        .cancel-btn:hover { border-color: var(--danger); color: var(--danger); }
-
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; color: var(--muted); gap: 8px; }
-        .empty-state .icon { font-size: 32px; opacity: 0.3; }
-
-        /* Right Panel — Detail + Log */
-        .panel-right { border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
-        .detail-box { flex: 1; overflow-y: auto; padding: 16px; }
-        .detail-box::-webkit-scrollbar { width: 4px; }
-        .detail-box::-webkit-scrollbar-thumb { background: var(--border); }
-
-        .detail-key { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
-        .detail-val { font-size: 11px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; word-break: break-all; margin-bottom: 12px; white-space: pre-wrap; line-height: 1.6; }
-
-        .log-box { border-top: 1px solid var(--border); height: 200px; overflow-y: auto; padding: 12px; }
-        .log-box::-webkit-scrollbar { width: 4px; }
-        .log-box::-webkit-scrollbar-thumb { background: var(--border); }
-        .log-entry { font-size: 10px; line-height: 1.8; display: flex; gap: 8px; }
-        .log-ts { color: var(--muted); flex-shrink: 0; }
-        .log-msg.success { color: var(--accent2); }
-        .log-msg.error { color: var(--danger); }
-        .log-msg.warn { color: #f59e0b; }
-        .log-msg.info { color: var(--text); }
-
-        @media (max-width: 1100px) {
-          .main { grid-template-columns: 300px 1fr; }
-          .panel-right { display: none; }
-        }
-      `}</style>
-
-      <div className="grid-bg" />
-      <div className="shell">
+      <div className={styles.gridBg} />
+      <div className={styles.shell}>
         {/* Topbar */}
-        <header className="topbar">
-          <div className="logo">
+        <header className={styles.topbar}>
+          <div className={styles.logo}>
             <span>GOD</span><em>MODE</em>
             <span style={{fontSize:11, fontFamily:'JetBrains Mono', fontWeight:400, marginLeft:12, color:'#555570', letterSpacing:2}}>AUTOMATION HQ</span>
           </div>
-          <div className="status-pill">
-            <div className={`dot ${health ? 'live' : ''}`} />
+          <div className={styles.statusPill}>
+            <div className={`${styles.dot} ${health ? styles.live : ''}`} />
             {health ? `API LIVE · ${health.jobs} total jobs · ${health.queued} queued` : 'API OFFLINE'}
           </div>
         </header>
 
-        <div className="main">
+        <div className={styles.main}>
           {/* LEFT: Form + Stats */}
-          <aside className="panel-left">
-            <div className="panel-title">⚡ Launch Job</div>
-            <div className="job-form">
+          <aside className={styles.panelLeft}>
+            <div className={styles.panelTitle}>⚡ Launch Job</div>
+            <div className={styles.jobForm}>
               <div>
-                <label>Job Type</label>
-                <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
+                <label className={styles.label}>Job Type</label>
+                <select className={styles.select} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
                   {JOB_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
-                <label>Payload (JSON)</label>
+                <label className={styles.label}>Payload (JSON)</label>
                 <textarea
+                  className={styles.textarea}
                   value={form.payload}
                   onChange={e => setForm(f => ({ ...f, payload: e.target.value }))}
                   spellCheck={false}
                 />
               </div>
-              {error && <div className="error-msg">⚠ {error}</div>}
+              {error && <div className={styles.errorMsg}>⚠ {error}</div>}
               <button
-                className={`btn-run ${submitting ? 'loading' : ''}`}
+                className={`${styles.btnRun} ${submitting ? styles.loading : ''}`}
                 onClick={runJob}
                 disabled={submitting}
               >
@@ -305,47 +168,44 @@ export default function GodMode() {
               </button>
             </div>
 
-            {/* Stats */}
-            <div className="stats">
-              {['ALL','QUEUED','RUNNING','DONE','FAILED'].slice(0,4).map(s => {
-                const count = s === 'ALL' ? jobs.length : jobs.filter(j => j.status === s).length;
-                return (
-                  <div className="stat" key={s}>
-                    <div className="stat-val" style={{ color: STATUS_COLOR[s] || 'var(--text)' }}>{count}</div>
-                    <div className="stat-label">{s}</div>
-                  </div>
-                );
-              })}
+            {/* Stats — all 5 statuses */}
+            <div className={styles.stats}>
+              {['ALL','QUEUED','RUNNING','DONE','FAILED'].map(s => (
+                <div className={styles.stat} key={s}>
+                  <div className={styles.statVal} style={{ color: STATUS_COLOR[s] || 'var(--text)' }}>{statusCounts[s]}</div>
+                  <div className={styles.statLabel}>{s}</div>
+                </div>
+              ))}
             </div>
           </aside>
 
           {/* CENTER: Job List */}
-          <main className="panel-center">
-            <div className="filter-bar">
+          <main className={styles.panelCenter}>
+            <div className={styles.filterBar}>
               {['ALL','QUEUED','RUNNING','DONE','FAILED'].map(f => (
-                <button key={f} className={`filter-btn ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
-                  {STATUS_ICON[f] || '◎'} {f} {f !== 'ALL' && `(${jobs.filter(j=>j.status===f).length})`}
+                <button key={f} className={`${styles.filterBtn} ${filter === f ? styles.active : ''}`} onClick={() => setFilter(f)}>
+                  {STATUS_ICON[f] || '◎'} {f} {f !== 'ALL' && `(${statusCounts[f]})`}
                 </button>
               ))}
             </div>
-            <div className="job-list">
+            <div className={styles.jobList}>
               {filtered.length === 0 ? (
-                <div className="empty-state">
-                  <div className="icon">∅</div>
+                <div className={styles.emptyState}>
+                  <div className={styles.icon}>∅</div>
                   <div>No jobs {filter !== 'ALL' ? `with status ${filter}` : 'yet'}</div>
                 </div>
               ) : filtered.map(job => (
-                <div key={job.id} className={`job-row ${selected?.id === job.id ? 'active' : ''}`} onClick={() => setSelected(job)}>
-                  <span className="status-badge" style={{ background: STATUS_COLOR[job.status] + '18', color: STATUS_COLOR[job.status] }}>
+                <div key={job.id} className={`${styles.jobRow} ${selected?.id === job.id ? styles.active : ''}`} onClick={() => setSelected(job)}>
+                  <span className={styles.statusBadge} style={{ background: STATUS_COLOR[job.status] + '18', color: STATUS_COLOR[job.status] }}>
                     {STATUS_ICON[job.status]} {job.status}
                   </span>
                   <div>
-                    <div className="job-id">{job.id.slice(0, 8)}…</div>
-                    <div className="job-meta"><span className="job-type-tag">{job.type}</span> · {timeAgo(job.createdAt)}</div>
+                    <div className={styles.jobId}>{job.id.slice(0, 8)}…</div>
+                    <div className={styles.jobMeta}><span className={styles.jobTypeTag}>{job.type}</span> · {timeAgo(job.createdAt)}</div>
                   </div>
-                  <div className="job-time">{job.completedAt ? timeAgo(job.completedAt) : '—'}</div>
+                  <div className={styles.jobTime}>{job.completedAt ? timeAgo(job.completedAt) : '—'}</div>
                   {job.status === 'QUEUED' && (
-                    <button className="cancel-btn" onClick={e => { e.stopPropagation(); cancelJob(job.id); }}>✕</button>
+                    <button className={styles.cancelBtn} onClick={e => { e.stopPropagation(); cancelJob(job.id); }}>✕</button>
                   )}
                 </div>
               ))}
@@ -353,9 +213,9 @@ export default function GodMode() {
           </main>
 
           {/* RIGHT: Detail + Log */}
-          <aside className="panel-right">
-            <div className="panel-title">🔍 Job Detail</div>
-            <div className="detail-box">
+          <aside className={styles.panelRight}>
+            <div className={styles.panelTitle}>🔍 Job Detail</div>
+            <div className={styles.detailBox}>
               {selected ? (
                 <>
                   {[
@@ -370,8 +230,8 @@ export default function GodMode() {
                     ['Error', selected.error || '—'],
                   ].map(([k, v]) => (
                     <div key={k}>
-                      <div className="detail-key">{k}</div>
-                      <div className="detail-val">{v}</div>
+                      <div className={styles.detailKey}>{k}</div>
+                      <div className={styles.detailVal}>{v}</div>
                     </div>
                   ))}
                 </>
@@ -381,14 +241,14 @@ export default function GodMode() {
                 </div>
               )}
             </div>
-            <div className="panel-title" style={{ borderTop: '1px solid var(--border)' }}>📡 Activity Log</div>
-            <div className="log-box">
+            <div className={styles.panelTitle} style={{ borderTop: '1px solid var(--border)' }}>📡 Activity Log</div>
+            <div className={styles.logBox}>
               {log.length === 0 ? (
                 <div style={{ color: 'var(--muted)', fontSize: 10 }}>Waiting for activity…</div>
               ) : [...log].reverse().map((e, i) => (
-                <div key={i} className="log-entry">
-                  <span className="log-ts">{e.ts}</span>
-                  <span className={`log-msg ${e.type}`}>{e.msg}</span>
+                <div key={i} className={styles.logEntry}>
+                  <span className={styles.logTs}>{e.ts}</span>
+                  <span className={`${styles.logMsg} ${styles[e.type] || ''}`}>{e.msg}</span>
                 </div>
               ))}
             </div>

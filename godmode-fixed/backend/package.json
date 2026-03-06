@@ -4,10 +4,15 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "node --test __tests__/api.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.3.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2"
   }
 }
