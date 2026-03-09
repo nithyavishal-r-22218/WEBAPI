@@ -116,6 +116,79 @@
     .btn-send:hover { border-color: var(--primary); }
     .btn-send:disabled { opacity: 0.4; cursor: not-allowed; transform: none; filter: none; }
 
+    .btn-inspect { background: transparent; color: var(--primary); border: 1px solid var(--border); transition: border-color 0.2s, filter 0.2s, transform 0.15s; }
+    .btn-inspect:hover { border-color: var(--primary); }
+    .btn-inspect.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    .locator-result { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-top: 4px; transition: all 0.25s; display: none; }
+    .locator-result.show { display: block; }
+    .locator-result-title { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .locator-result-value { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--primary); word-break: break-all; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; transition: all 0.25s; }
+    .locator-result-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 10px; color: var(--text-muted); }
+
+    .save-dialog {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 8px;
+      transition: background-color 0.25s, border-color 0.25s;
+    }
+    .save-dialog-title {
+      font-size: 12px; font-weight: 600; color: var(--text);
+      margin-bottom: 2px;
+    }
+    .save-option {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; border-radius: 6px; cursor: pointer;
+      border: 1px solid var(--border); background: var(--bg);
+      font-size: 12px; color: var(--text); transition: all 0.2s;
+    }
+    .save-option:hover { border-color: var(--primary); }
+    .save-option.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--bg)); }
+    .save-option input[type="radio"] { accent-color: var(--primary); }
+
+    .existing-select {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; font-family: 'Inter', sans-serif; font-size: 12px;
+      color: var(--text); width: 100%; transition: border-color 0.2s;
+    }
+    .existing-select:focus { outline: none; border-color: var(--primary); }
+
+    .tabs {
+      display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      flex: 1; padding: 8px 6px; background: none; border: none;
+      color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all 0.2s;
+    }
+    .tab-btn.active {
+      color: var(--primary); border-bottom-color: var(--primary);
+    }
+    .tab-btn:hover { color: var(--primary); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .form-group {
+      margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .form-label {
+      font-size: 11px; font-weight: 600; color: var(--text);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      transition: color 0.2s;
+    }
+    .form-input {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 10px; font-family: 'Inter', sans-serif; font-size: 12px;
+      color: var(--text); transition: border-color 0.2s, background-color 0.2s;
+    }
+    .form-input:focus {
+      outline: none; border-color: var(--primary); background: var(--surface);
+    }
+
+    .btn-save {
+      background: var(--success); color: #fff; margin-top: 4px;
+    }
+
     .status {
       font-size: 11px; color: var(--text-muted); text-align: center;
       min-height: 16px; transition: color 0.2s;
@@ -158,28 +231,125 @@
     </div>
   </div>
   <div class="body">
-    <div class="step-count">
-      <div>
-        <div class="count-val" id="stepCount">0</div>
-        <div class="count-label">Steps Recorded</div>
-      </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="record">Record</button>
+      <button class="tab-btn" data-tab="testcase">Save as Test</button>
     </div>
-    <button class="btn btn-record" id="recordBtn">⏺ START RECORDING</button>
-    <button class="btn btn-send" id="sendBtn" disabled>▶ SEND TO WEBAPI</button>
-    <div class="status" id="status"></div>
+
+    <!-- Record Tab -->
+    <div id="record" class="tab-content active">
+      <div class="step-count">
+        <div>
+          <div class="count-val" id="stepCount">0</div>
+          <div class="count-label">Steps Recorded</div>
+        </div>
+      </div>
+      <button class="btn btn-record" id="recordBtn">⏺ START RECORDING</button>
+      <button class="btn btn-inspect" id="inspectBtn">🎯 INSPECT ELEMENT</button>
+      <div class="locator-result" id="locatorResult">
+        <div class="locator-result-title">Selected Locator</div>
+        <div class="locator-result-value" id="locatorValue">—</div>
+        <div class="locator-result-meta"><span id="locatorType"></span><span id="locatorStrategy"></span></div>
+      </div>
+      <button class="btn btn-send" id="sendBtn" disabled>💾 SAVE AS TEST CASE</button>
+
+      <!-- Save Dialog (hidden by default) -->
+      <div id="saveDialog" style="display:none">
+        <div class="save-dialog">
+          <div class="save-dialog-title">Save recording to:</div>
+          <label class="save-option selected" id="optNew">
+            <input type="radio" name="saveMode" value="new" checked /> Create new test case
+          </label>
+          <label class="save-option" id="optExisting">
+            <input type="radio" name="saveMode" value="existing" /> Add to existing test case
+          </label>
+          <select class="existing-select" id="existingSelect" style="display:none">
+            <option value="">-- Select a test case --</option>
+          </select>
+          <div class="form-group">
+            <input type="text" class="form-input" id="quickName" placeholder="Test case name" />
+          </div>
+          <button class="btn btn-save" id="confirmSaveBtn">💾 SAVE</button>
+          <button class="btn btn-send" id="cancelSaveBtn">✕ CANCEL</button>
+        </div>
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+
+    <!-- Save as Test Case Tab -->
+    <div id="testcase" class="tab-content">
+      <div class="step-count">
+        <div>
+          <div class="count-val" id="stepCount2">0</div>
+          <div class="count-label">Steps to Save</div>
+        </div>
+      </div>
+      <form id="testCaseForm">
+        <div class="form-group">
+          <label class="form-label">Test Name</label>
+          <input type="text" class="form-input" id="tcName" placeholder="e.g., User Login Flow" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select class="form-input" id="tcType" required>
+            <option value="">Select type</option>
+            <option value="UI">UI Automation</option>
+            <option value="API">API Test</option>
+            <option value="E2E">E2E Test</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Framework</label>
+          <input type="text" class="form-input" id="tcFramework" placeholder="e.g., Selenium, Playwright" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <input type="text" class="form-input" id="tcDescription" placeholder="Brief description" />
+        </div>
+        <button type="submit" class="btn btn-save" id="saveTestBtn">💾 SAVE TEST CASE</button>
+        <div class="status" id="testStatus"></div>
+      </form>
+    </div>
   </div>
   <a href="http://localhost:3000" target="_blank" class="footer-link">Open Dashboard →</a>
 
   <script>
     let recording = false;
     let stepCount = 0;
+    let existingTestCases = [];
 
     const recordBtn = document.getElementById('recordBtn');
     const sendBtn = document.getElementById('sendBtn');
+    const inspectBtn = document.getElementById('inspectBtn');
+    const locatorResult = document.getElementById('locatorResult');
+    const locatorValueEl = document.getElementById('locatorValue');
+    const locatorTypeEl = document.getElementById('locatorType');
+    const locatorStrategyEl = document.getElementById('locatorStrategy');
     const stepCountEl = document.getElementById('stepCount');
+    const stepCount2El = document.getElementById('stepCount2');
     const statusEl = document.getElementById('status');
+    const testStatusEl = document.getElementById('testStatus');
     const recDot = document.getElementById('recDot');
     const themeToggle = document.getElementById('themeToggle');
+    let inspectActive = false;
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const testCaseForm = document.getElementById('testCaseForm');
+    const tcNameInput = document.getElementById('tcName');
+    const tcTypeSelect = document.getElementById('tcType');
+    const tcFrameworkInput = document.getElementById('tcFramework');
+    const tcDescriptionInput = document.getElementById('tcDescription');
+
+    // Save dialog elements
+    const saveDialog = document.getElementById('saveDialog');
+    const optNew = document.getElementById('optNew');
+    const optExisting = document.getElementById('optExisting');
+    const existingSelect = document.getElementById('existingSelect');
+    const quickNameInput = document.getElementById('quickName');
+    const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+    const cancelSaveBtn = document.getElementById('cancelSaveBtn');
+    const saveRadios = document.querySelectorAll('input[name="saveMode"]');
 
     // Apply saved theme
     const savedTheme = localStorage.getItem('webapi-popup-theme') || 'light';
@@ -204,9 +374,36 @@
       applyTheme(next);
     });
 
-    function setStatus(msg, type = '') {
-      statusEl.textContent = msg;
-      statusEl.className = 'status ' + type;
+    // Tab switching
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tabName = btn.dataset.tab;
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(tc => tc.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(tabName).classList.add('active');
+      });
+    });
+
+    function setStatus(msg, type = '', isTest = false) {
+      const el = isTest ? testStatusEl : statusEl;
+      el.textContent = msg;
+      el.className = 'status ' + type;
+    }
+
+    // Fetch existing test cases from API
+    function loadExistingTestCases() {
+      chrome.runtime.sendMessage({ type: 'GET_TEST_CASES' }, (res) => {
+        if (chrome.runtime.lastError || !res || res.error) return;
+        existingTestCases = res.testCases || [];
+        existingSelect.innerHTML = '<option value="">-- Select a test case --</option>';
+        existingTestCases.forEach(tc => {
+          const opt = document.createElement('option');
+          opt.value = tc.id;
+          opt.textContent = tc.name || tc.id;
+          existingSelect.appendChild(opt);
+        });
+      });
     }
 
     // Init state
@@ -216,9 +413,11 @@
       stepCount = res.steps;
       updateUI();
     });
+    loadExistingTestCases();
 
     function updateUI() {
       stepCountEl.textContent = stepCount;
+      stepCount2El.textContent = stepCount;
       recordBtn.textContent = recording ? '⏹ STOP RECORDING' : '⏺ START RECORDING';
       recordBtn.className = 'btn btn-record' + (recording ? ' recording' : '');
       recDot.className = 'rec-dot' + (recording ? ' active' : '');
@@ -236,11 +435,154 @@
       });
     });
 
+    inspectBtn.addEventListener('click', () => {
+      inspectActive = !inspectActive;
+      inspectBtn.classList.toggle('active', inspectActive);
+      inspectBtn.textContent = inspectActive ? '🎯 INSPECTING… (ESC to stop)' : '🎯 INSPECT ELEMENT';
+      chrome.storage.local.set({ inspecting: inspectActive });
+      // Also send message to active tab's content script
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, { type: inspectActive ? 'START_INSPECT' : 'STOP_INSPECT' });
+        }
+      });
+      if (inspectActive) setStatus('Click any element on the page to see locators', '');
+      else { setStatus(''); locatorResult.classList.remove('show'); }
+    });
+
+    // Listen for locator selections from content script
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === 'LOCATOR_SELECTED' && msg.locator) {
+        locatorResult.classList.add('show');
+        locatorValueEl.textContent = msg.locator.value;
+        locatorTypeEl.textContent = msg.locator.type;
+        locatorStrategyEl.textContent = msg.locator.strategy.toUpperCase();
+        setStatus('Locator captured ✓', 'ok');
+      }
+    });
+
+    // Listen for inspect stop (ESC key in content script)
+    chrome.storage.onChanged.addListener((changes) => {
+      if (changes.inspecting && !changes.inspecting.newValue) {
+        inspectActive = false;
+        inspectBtn.classList.remove('active');
+        inspectBtn.textContent = '🎯 INSPECT ELEMENT';
+      }
+    });
+
+    // Save dialog radio handling
+    saveRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        const mode = document.querySelector('input[name="saveMode"]:checked').value;
+        optNew.classList.toggle('selected', mode === 'new');
+        optExisting.classList.toggle('selected', mode === 'existing');
+        existingSelect.style.display = mode === 'existing' ? 'block' : 'none';
+        quickNameInput.style.display = mode === 'new' ? 'block' : 'none';
+      });
+    });
+
+    // Show save dialog when clicking "Save as Test Case"
     sendBtn.addEventListener('click', () => {
-      setStatus('Sending to WEBAPI…');
-      chrome.runtime.sendMessage({ type: 'SEND_TO_GODMODE' }, (res) => {
-        if (res.error) { setStatus('Error: ' + res.error, 'err'); return; }
-        setStatus('✓ Job ' + (res.jobId?.slice(0,8) || '') + '… queued!', 'ok');
+      loadExistingTestCases();
+      saveDialog.style.display = 'block';
+      sendBtn.style.display = 'none';
+    });
+
+    cancelSaveBtn.addEventListener('click', () => {
+      saveDialog.style.display = 'none';
+      sendBtn.style.display = '';
+    });
+
+    // Confirm save
+    confirmSaveBtn.addEventListener('click', () => {
+      const mode = document.querySelector('input[name="saveMode"]:checked').value;
+
+      if (mode === 'new') {
+        const name = quickNameInput.value.trim();
+        if (!name) { setStatus('Please enter a test case name', 'err'); return; }
+        setStatus('Saving new test case…');
+        const testCase = {
+          id: 'tc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9),
+          name,
+          type: 'UI',
+          framework: 'WebAPI Recorder',
+          description: '',
+          createdAt: new Date().toISOString(),
+          source: 'chrome_extension'
+        };
+        chrome.runtime.sendMessage({ type: 'SAVE_TEST_CASE', testCase }, (res) => {
+          if (res.error) { setStatus('Error: ' + res.error, 'err'); return; }
+          setStatus('✓ Test case "' + name + '" saved!', 'ok');
+          saveDialog.style.display = 'none';
+          sendBtn.style.display = '';
+          quickNameInput.value = '';
+          stepCount = 0;
+          updateUI();
+        });
+      } else {
+        const selectedId = existingSelect.value;
+        if (!selectedId) { setStatus('Please select a test case', 'err'); return; }
+        const existing = existingTestCases.find(tc => tc.id === selectedId);
+        setStatus('Saving to existing test case…');
+        const testCase = {
+          id: selectedId,
+          name: existing?.name || selectedId,
+          type: existing?.type || 'UI',
+          framework: existing?.framework || 'WebAPI Recorder',
+          description: existing?.description || '',
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          source: 'chrome_extension'
+        };
+        chrome.runtime.sendMessage({ type: 'SAVE_TEST_CASE', testCase }, (res) => {
+          if (res.error) { setStatus('Error: ' + res.error, 'err'); return; }
+          setStatus('✓ Steps added to "' + (existing?.name || selectedId) + '"!', 'ok');
+          saveDialog.style.display = 'none';
+          sendBtn.style.display = '';
+          stepCount = 0;
+          updateUI();
+        });
+      }
+    });
+
+    testCaseForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = tcNameInput.value.trim();
+      const type = tcTypeSelect.value;
+      const framework = tcFrameworkInput.value.trim();
+      const description = tcDescriptionInput.value.trim();
+
+      if (!name || !type) {
+        setStatus('Name and Type are required', 'err', true);
+        return;
+      }
+
+      if (stepCount === 0) {
+        setStatus('No steps recorded to save', 'err', true);
+        return;
+      }
+
+      setStatus('Saving test case…', '', true);
+      
+      const testCase = {
+        id: 'tc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9),
+        name,
+        type,
+        framework: framework || 'Unknown',
+        description,
+        createdAt: new Date().toISOString(),
+        source: 'chrome_extension'
+      };
+
+      chrome.runtime.sendMessage({ type: 'SAVE_TEST_CASE', testCase }, (res) => {
+        if (res.error) {
+          setStatus('Error: ' + res.error, 'err', true);
+          return;
+        }
+        setStatus('✓ Test case saved!', 'ok', true);
+        tcNameInput.value = '';
+        tcTypeSelect.value = '';
+        tcFrameworkInput.value = '';
+        tcDescriptionInput.value = '';
         stepCount = 0;
         updateUI();
       });

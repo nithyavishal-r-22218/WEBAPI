@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import puppeteer from 'puppeteer';
 import { log } from '../utils/logger.js';
 
 export const JobStatus = {
@@ -15,6 +16,76 @@ let isProcessing = false;
 
 const MAX_JOBS = 1000;
 
+// ─── Execute recorded steps in a real browser ────────────────────────────────
+async function executeStepsInBrowser(steps) {
+  const browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+    args: ['--start-maximized', '--no-sandbox'],
+  });
+
+  const page = await browser.newPage();
+  const results = [];
+
+  try {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const stepResult = { index: i, action: step.action, selector: step.selector, status: 'ok' };
+
+      try {
+        // Navigate to the step's URL if it's different from current page
+        if (step.url && i === 0) {
+          await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        } else if (step.url && step.action === 'click') {
+          const currentUrl = page.url();
+          // Only navigate if the base URL is completely different
+          const stepOrigin = new URL(step.url).origin;
+          const currentOrigin = currentUrl.startsWith('http') ? new URL(currentUrl).origin : '';
+          if (currentOrigin !== stepOrigin) {
+            await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          }
+        }
+
+        if (step.action === 'click') {
+          await page.waitForSelector(step.selector, { timeout: 8000 });
+          await page.click(step.selector);
+          stepResult.detail = `Clicked ${step.selector}`;
+        } else if (step.action === 'input') {
+          await page.waitForSelector(step.selector, { timeout: 8000 });
+          // Clear existing value then type new one
+          await page.click(step.selector, { clickCount: 3 });
+          await page.type(step.selector, step.value || '');
+          stepResult.detail = `Typed into ${step.selector}`;
+        } else if (step.action === 'press_enter') {
+          await page.keyboard.press('Enter');
+          stepResult.detail = 'Pressed Enter';
+        } else if (step.action === 'navigate' || step.action === 'openUrl') {
+          const url = step.url || step.value || step.params?.url;
+          if (url) {
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            stepResult.detail = `Navigated to ${url}`;
+          }
+        }
+
+        // Small delay between steps for stability
+        await new Promise(r => setTimeout(r, 500));
+      } catch (stepErr) {
+        stepResult.status = 'error';
+        stepResult.error = stepErr.message;
+        log('warn', 'step_failed', { index: i, action: step.action, error: stepErr.message });
+      }
+
+      results.push(stepResult);
+    }
+  } finally {
+    // Keep browser open for 3 seconds so user can see the result
+    await new Promise(r => setTimeout(r, 3000));
+    await browser.close();
+  }
+
+  return results;
+}
+
 // ─── Job Processor ───────────────────────────────────────────────────────────
 export async function processJob(job) {
   job.status = JobStatus.RUNNING;
@@ -22,15 +93,31 @@ export async function processJob(job) {
   log('info', 'job_started', { jobId: job.id, type: job.type });
 
   try {
-    await new Promise(res => setTimeout(res, 1500));
-
-    if (job.type === 'SCRAPE') {
-      job.result = { url: job.payload.url, data: `Scraped content from ${job.payload.url}`, rows: 42 };
-    } else if (job.type === 'AUTOMATE') {
-      job.result = { steps: job.payload.steps, executed: job.payload.steps?.length || 0, screenshots: [] };
-    } else if (job.type === 'SCHEDULE') {
-      job.result = { scheduled: true, nextRun: new Date(Date.now() + 86400000).toISOString() };
+    if (job.type === 'AUTOMATE') {
+      const steps = job.payload.steps || [];
+      if (steps.length === 0) {
+        job.result = { executed: 0, message: 'No steps to execute' };
+      } else {
+        const stepResults = await executeStepsInBrowser(steps);
+        const passed = stepResults.filter(s => s.status === 'ok').length;
+        const failed = stepResults.filter(s => s.status === 'error').length;
+        job.result = { executed: steps.length, passed, failed, stepResults };
+      }
+    } else if (job.type === 'SCRAPE') {
+      const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+      const page = await browser.newPage();
+      try {
+        const url = job.payload.url || 'https://example.com';
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const title = await page.title();
+        const content = await page.evaluate(() => document.body.innerText.slice(0, 2000));
+        job.result = { url, title, contentPreview: content, scraped: true };
+      } finally {
+        await browser.close();
+      }
     } else {
+      // SCHEDULE / CUSTOM — no browser needed
+      await new Promise(res => setTimeout(res, 1000));
       job.result = { executed: true, payload: job.payload };
     }
 

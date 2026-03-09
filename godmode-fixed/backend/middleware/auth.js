@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto';
 
-const AUTH_KEY = process.env.GODMODE_API_KEY || '';
+const AUTH_KEY = process.env.GODMODE_API_KEY || 'godmode-dev-key';
 
 function safeCompare(a, b) {
   if (!a || !b || a.length !== b.length) return false;

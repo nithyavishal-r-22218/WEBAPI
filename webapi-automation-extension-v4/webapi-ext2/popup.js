@@ -7,7 +7,8 @@ const G = {
   settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light' },
   live:{ steps:[], network:[], recording:false, name:'', startUrl:'', t0:null, id:null },
   genFW:'playwright', genLang:'javascript', genCode:'', genRecId:'',
-  editCaseId:null
+  editCaseId:null,
+  inspectActive:false
 };
 
 const $   = id => document.getElementById(id);
@@ -81,7 +82,7 @@ async function syncResultToGodMode(result) {
   return r;
 }
 
-const ACT_ICO = { navigate:'🔗', click:'👆', type:'✏', select:'📋', assert_text:'✅', key:'⌨', default:'⚡' };
+const ACT_ICO = { navigate:'🔗', click:'👆', type:'✏', select:'📋', assert_text:'✅', key:'⌨', rightclick:'🖱', scroll_to:'📜', hover:'🫳', default:'⚡' };
 const ACT_CLS = { navigate:'nav', click:'clk', type:'typ', select:'sel2', assert_text:'ast' };
 
 // ── Background messenger with retry ─────────────────────────────────────────
@@ -179,6 +180,16 @@ async function boot() {
       G.live.steps     = recState.steps   || [];
       G.live.network   = recState.network || [];
       setRecUI(true);
+    } else {
+      // Restore last stopped recording so steps aren't lost
+      const d = await chrome.storage.local.get('lastStoppedRec');
+      if (d.lastStoppedRec && d.lastStoppedRec.steps?.length) {
+        G.live.steps   = d.lastStoppedRec.steps;
+        G.live.network = d.lastStoppedRec.network || [];
+        G.live.name    = d.lastStoppedRec.name || '';
+        G.live.id      = d.lastStoppedRec.id;
+        setRecUI(false);
+      }
     }
     applySettings();
     renderAll();
@@ -186,6 +197,8 @@ async function boot() {
     chrome.runtime.onMessage.addListener(onBgMsg);
     // Pull data from WEBAPI in background
     pullFromGodMode();
+    // Check if a test just finished — show result
+    checkPendingTestResult();
   } catch(err) {
     console.error('WebAPI boot error:', err);
     toast('Could not connect — try reloading the extension', 'fail');
@@ -198,6 +211,7 @@ async function boot() {
 function bindAll() {
   $('apiPill').addEventListener('click', () => checkApi(true));
   $('recPill').addEventListener('click', handleRecClick);
+  if ($('inspectBtn')) $('inspectBtn').addEventListener('click', handleInspectClick);
 
   [['t-record','record'],['t-library','library'],['t-generate','generate'],
    ['t-tests','tests'],['t-results','results'],['t-settings','settings']]
@@ -277,6 +291,12 @@ function onBgMsg(msg) {
     $('hSteps').textContent = msg.total;
     renderSteps();
   }
+  if (msg.type === 'STEPS_UPDATED') {
+    // Full step list replaced (e.g. scroll_to inserted before click)
+    G.live.steps = msg.steps;
+    $('hSteps').textContent = msg.total;
+    renderSteps();
+  }
   if (msg.type === 'NET') {
     G.live.network.push(msg.net);
     renderNetCalls();
@@ -300,17 +320,52 @@ function onBgMsg(msg) {
     }
   }
 
-  // Fired when user clicks STOP on the in-page recording banner
+  // Fired when user clicks STOP on the in-page recording pill
   if (msg.type === 'REC_STOPPED' && msg.rec) {
     G.live.recording = false;
     G.live.steps     = msg.rec.steps   || [];
     G.live.network   = msg.rec.network || [];
     G.live.name      = msg.rec.name    || '';
     G.live.id        = msg.rec.id;
+    // Reset inspect state since recording is over
+    G.inspectActive = false;
+    const ib = $('inspectBtn');
+    if (ib) { ib.classList.remove('on'); ib.textContent = '🎯 Inspect'; }
     setRecUI(false);
     renderSteps();
     renderNetCalls();
-    persistRec(msg.rec);  // auto-save from banner stop
+    // No need to persist — background.js now auto-saves in stopRec()
+    const idx = G.recordings.findIndex(r => r.id === msg.rec.id);
+    if (idx >= 0) G.recordings[idx] = msg.rec;
+    else G.recordings.unshift(msg.rec);
+    updateCounts();
+    renderLibrary();
+    toast('✓ ' + (msg.rec.steps?.length || 0) + ' steps saved', 'pass');
+  }
+
+  // Locator picked from inspect mode
+  if (msg.type === 'LOCATOR_SELECTED' && msg.locator) {
+    const el = $('locatorResult');
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML =
+        '<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Selected Locator</div>'
+        + '<div style="font-size:10px;color:var(--blue);font-weight:600;margin-bottom:2px">' + msg.locator.type + ' (' + msg.locator.strategy + ')</div>'
+        + '<div style="font-size:11px;font-family:DM Mono,monospace;color:var(--tx);background:var(--sf3);padding:6px 8px;border-radius:6px;word-break:break-all;cursor:pointer" title="Click to copy" id="locatorValCopy">' + msg.locator.value + '</div>';
+      const copyEl = $('locatorValCopy');
+      if (copyEl) {
+        copyEl.addEventListener('click', () => {
+          navigator.clipboard.writeText(msg.locator.value).then(() => toast('Copied!', 'pass'));
+        });
+      }
+    }
+  }
+
+  // Inspect stopped from page (ESC key)
+  if (msg.type === 'INSPECT_STOPPED') {
+    G.inspectActive = false;
+    const btn = $('inspectBtn');
+    if (btn) { btn.classList.remove('on'); btn.textContent = '🎯 Inspect'; }
   }
 }
 
@@ -337,6 +392,13 @@ async function handleRecClick() {
       }
     } else {
       // ── START ──────────────────────────────────────
+      // Auto-stop inspect if active
+      if (G.inspectActive) {
+        await bg('STOP_INSPECT');
+        G.inspectActive = false;
+        const ib = $('inspectBtn');
+        if (ib) { ib.classList.remove('on'); ib.textContent = '🎯 Inspect'; }
+      }
       const tabs = await chrome.tabs.query({ active:true, currentWindow:true });
       const tab  = tabs[0];
       if (!tab) { toast('No active tab found', 'fail'); return; }
@@ -349,6 +411,8 @@ async function handleRecClick() {
       if (r?.ok) {
         setRecUI(true);
         toast('Recording on ' + new URL(tab.url || 'http://x').hostname, 'pass');
+        // Close popup so only the in-page pill remains
+        setTimeout(() => window.close(), 400);
       } else {
         G.live.recording = false;
         toast('Could not start — refresh the tab and try again', 'fail');
@@ -357,6 +421,29 @@ async function handleRecClick() {
   } catch(err) {
     console.error('handleRecClick:', err);
     toast('Extension error — reload from chrome://extensions', 'fail');
+  }
+}
+
+// ── Inspect mode toggle ──────────────────────────────────────────────────
+async function handleInspectClick() {
+  const btn = $('inspectBtn');
+  if (!btn) return;
+  if (G.live.recording) {
+    toast('Stop recording first', 'fail');
+    return;
+  }
+  if (G.inspectActive) {
+    await bg('STOP_INSPECT');
+    G.inspectActive = false;
+    btn.classList.remove('on');
+    btn.textContent = '🎯 Inspect';
+    toast('Inspect mode off', 'info');
+  } else {
+    await bg('START_INSPECT');
+    G.inspectActive = true;
+    btn.classList.add('on');
+    btn.textContent = '🎯 Inspecting…';
+    toast('Hover over elements to see locators', 'pass');
   }
 }
 
@@ -394,17 +481,20 @@ async function saveRecManual() {
 function setRecUI(isRec) {
   const ring=$('heroRing'), ico=$('heroIco'), pill=$('recPill');
   const title=$('heroTitle'), sub=$('heroSub'), txt=$('recTxt');
+  const inspBtn = $('inspectBtn');
   if (isRec) {
     ring.classList.add('on'); pill.classList.add('on');
     ico.textContent = '⏹'; txt.textContent = '■ Stop';
     title.textContent = 'Recording in progress…';
     sub.textContent   = 'Click ■ Stop when done · Double-click to assert';
+    if (inspBtn) { inspBtn.disabled = true; inspBtn.style.opacity = '0.4'; inspBtn.style.pointerEvents = 'none'; }
   } else {
     ring.classList.remove('on'); pill.classList.remove('on');
     ico.textContent = '⏺'; txt.textContent = '● Rec';
     const n = G.live.steps.length;
     title.textContent = n > 0 ? '✓ Done — ' + n + ' steps saved to Library' : 'Click to Start Recording';
     sub.textContent   = n > 0 ? 'View in Library · Generate code · Run test' : 'Captures clicks · inputs · navigation · API calls';
+    if (inspBtn) { inspBtn.disabled = false; inspBtn.style.opacity = '1'; inspBtn.style.pointerEvents = 'auto'; }
   }
 }
 
@@ -484,6 +574,7 @@ function clearSteps() {
   $('saveRecBtn').disabled = true;
   $('hSteps').textContent = '0';
   setRecUI(false);
+  chrome.storage.local.remove('lastStoppedRec');
 }
 
 function openNameModal() { sv('nameInput', G.live.name || ''); openModal('nameModal'); }
@@ -546,7 +637,7 @@ function jumpGenerate(id) {
 async function recToPlatform(id) {
   const rec = G.recordings.find(r => r.id === id);
   if (!rec) return;
-  const r = await bg('PUSH_PLATFORM', { data:{ type:'RECORDING', name:rec.name, steps:rec.steps, network:rec.network }});
+  const r = await bg('PUSH_PLATFORM', { data:{ type:'RECORDING', id:rec.id, name:rec.name, startUrl:rec.startUrl, steps:rec.steps, network:rec.network }});
   toast(r?.ok ? '↑ Sent!' : '✗ ' + r?.error, r?.ok ? 'pass' : 'fail');
 }
 
@@ -583,6 +674,8 @@ async function runRecording(id) {
   const rec = G.recordings.find(r => r.id === id);
   if (!rec) return;
   toast('Running: ' + rec.name, 'info');
+  // Close popup — test pill will show on the page
+  setTimeout(() => window.close(), 300);
   const fakeCase = {
     id:              'run_' + rec.id,
     name:            rec.name,
@@ -815,10 +908,13 @@ async function runCase(id) {
   const c = G.cases.find(x => x.id === id);
   if (!c) return;
 
-  const btn = document.querySelector('[data-action="runCase"][data-id="'+id+'"]');
-  if (btn) { btn.textContent = '…'; btn.disabled = true; }
-
   toast('Running: ' + c.name, 'info');
+  // Close popup for web replay — test pill will show on the page
+  if (c.type !== 'API' && c.type !== 'WEB_API') {
+    setTimeout(() => window.close(), 300);
+  }
+
+  const btn = document.querySelector('[data-action="runCase"][data-id="'+id+'"]');
   const r = await bg('RUN_CASE', { c });
 
   if (btn) { btn.textContent = '▶'; btn.disabled = false; }
@@ -862,6 +958,24 @@ async function pushCase(id) {
   if (!c) return;
   const r = await bg('PUSH_PLATFORM', { data:{ type:'TEST_CASE', ...c }});
   toast(r?.ok ? '↑ Sent!' : '✗ ' + r?.error, r?.ok ? 'pass' : 'fail');
+}
+
+// ═══════════════════════════════════════════════════
+//  PENDING TEST RESULT (auto-show after test replay)
+// ═══════════════════════════════════════════════════
+async function checkPendingTestResult() {
+  const d = await chrome.storage.local.get('lastTestResult');
+  if (!d.lastTestResult) return;
+  const { res, caseName } = d.lastTestResult;
+  // Clear it so it doesn't show again
+  await chrome.storage.local.remove('lastTestResult');
+  // Update local state
+  const fullResult = { ...res, caseName };
+  G.results.unshift(fullResult);
+  renderResults(); updateCounts();
+  // Show the result modal
+  showRunResult({ name: caseName }, res);
+  toast((res.pass ? '✓ Pass' : '✗ Fail') + ' — ' + caseName, res.pass ? 'pass' : 'fail');
 }
 
 // ═══════════════════════════════════════════════════
@@ -936,42 +1050,57 @@ function setTheme(mode) {
 
 function applyDark() {
   const s = document.documentElement.style;
-  s.setProperty('--bg','#0e0f18');    s.setProperty('--sf','#14151f');
-  s.setProperty('--sf2','#1a1b28');   s.setProperty('--sf3','#202135');
-  s.setProperty('--b','#282940');     s.setProperty('--b2','#323350');
-  s.setProperty('--tx','#eeeef8');    s.setProperty('--t2','#a0a0c0');
-  s.setProperty('--t3','#606080');    s.setProperty('--t4','#404060');
-  s.setProperty('--brand','#eeeef8');
-  s.setProperty('--pink','#ff8fa8');  s.setProperty('--pink-bg','#2d1520');
-  s.setProperty('--mint','#00e0a8');  s.setProperty('--mint-bg','#0d2820');
-  s.setProperty('--sage','#6edba0');  s.setProperty('--sage-bg','#0e2820');
-  s.setProperty('--amber','#ffba45'); s.setProperty('--amber-bg','#2a1e00');
-  s.setProperty('--blue','#7da8ff');  s.setProperty('--blue-bg','#0f1535');
-  s.setProperty('--lilac','#c4b0ff');s.setProperty('--lilac-bg','#1a1240');
-  s.setProperty('--red','#ff7a7a');   s.setProperty('--red-bg','#2e0e0e');
+  s.setProperty('--bg','linear-gradient(135deg,#0f172a 0%,#1e1b4b 25%,#171728 50%,#1a0a2e 75%,#0f172a 100%)');
+  s.setProperty('--bg-solid','#0f172a');
+  s.setProperty('--glass','rgba(30,41,59,.65)');
+  s.setProperty('--glass2','rgba(30,41,59,.45)');
+  s.setProperty('--glass3','rgba(30,41,59,.3)');
+  s.setProperty('--glassborder','rgba(148,163,184,.12)');
+  s.setProperty('--sf','rgba(30,41,59,.65)');
+  s.setProperty('--sf2','rgba(30,41,59,.45)');s.setProperty('--sf3','rgba(30,41,59,.3)');
+  s.setProperty('--b','rgba(148,163,184,.1)');s.setProperty('--b2','rgba(148,163,184,.18)');
+  s.setProperty('--tx','#e2e8f0');    s.setProperty('--t2','#94a3b8');
+  s.setProperty('--t3','#64748b');    s.setProperty('--t4','#475569');
+  s.setProperty('--brand','#60a5fa');
+  s.setProperty('--pink','#f9a8d4');  s.setProperty('--pink-bg','rgba(249,168,212,.1)');
+  s.setProperty('--mint','#6ee7b7');  s.setProperty('--mint-bg','rgba(110,231,183,.1)');
+  s.setProperty('--sage','#86efac');  s.setProperty('--sage-bg','rgba(134,239,172,.1)');
+  s.setProperty('--amber','#fcd34d'); s.setProperty('--amber-bg','rgba(252,211,77,.1)');
+  s.setProperty('--blue','#93c5fd');  s.setProperty('--blue-bg','rgba(147,197,253,.1)');
+  s.setProperty('--lilac','#c4b5fd');s.setProperty('--lilac-bg','rgba(196,181,253,.1)');
+  s.setProperty('--red','#fca5a5');   s.setProperty('--red-bg','rgba(252,165,165,.1)');
 }
 
 function applyLight() {
   const s = document.documentElement.style;
-  s.setProperty('--bg','#f4eefa');    s.setProperty('--sf','#ffffff');
-  s.setProperty('--sf2','#fafafa');   s.setProperty('--sf3','#f2f2f5');
-  s.setProperty('--b','#eaeaed');     s.setProperty('--b2','#dcdce2');
-  s.setProperty('--tx','#141416');    s.setProperty('--t2','#5a5a68');
-  s.setProperty('--t3','#9898a8');    s.setProperty('--t4','#c4c4d0');
-  s.setProperty('--brand','#141416');
-  s.setProperty('--pink','#ff6b8a');  s.setProperty('--pink-bg','#fff0f3');
-  s.setProperty('--mint','#00c896');  s.setProperty('--mint-bg','#e6fff8');
-  s.setProperty('--sage','#5bc788');  s.setProperty('--sage-bg','#edfaf3');
-  s.setProperty('--amber','#f5a623');s.setProperty('--amber-bg','#fff8ec');
-  s.setProperty('--blue','#4f7cff');  s.setProperty('--blue-bg','#eff3ff');
-  s.setProperty('--lilac','#a78bfa');s.setProperty('--lilac-bg','#f4f0ff');
-  s.setProperty('--red','#f05b5b');   s.setProperty('--red-bg','#fff1f1');
+  s.setProperty('--bg','linear-gradient(135deg,#dbeafe 0%,#e0e7ff 25%,#f3e8ff 50%,#fce7f3 75%,#dbeafe 100%)');
+  s.setProperty('--bg-solid','#e8eeff');
+  s.setProperty('--glass','rgba(255,255,255,.55)');
+  s.setProperty('--glass2','rgba(255,255,255,.35)');
+  s.setProperty('--glass3','rgba(255,255,255,.2)');
+  s.setProperty('--glassborder','rgba(255,255,255,.65)');
+  s.setProperty('--sf','rgba(255,255,255,.62)');
+  s.setProperty('--sf2','rgba(255,255,255,.4)');s.setProperty('--sf3','rgba(255,255,255,.28)');
+  s.setProperty('--b','rgba(148,163,184,.18)');s.setProperty('--b2','rgba(148,163,184,.28)');
+  s.setProperty('--tx','#1e293b');    s.setProperty('--t2','#475569');
+  s.setProperty('--t3','#94a3b8');    s.setProperty('--t4','#cbd5e1');
+  s.setProperty('--brand','#3b82f6');
+  s.setProperty('--pink','#f472b6');  s.setProperty('--pink-bg','rgba(244,114,182,.12)');
+  s.setProperty('--mint','#34d399');  s.setProperty('--mint-bg','rgba(52,211,153,.12)');
+  s.setProperty('--sage','#4ade80');  s.setProperty('--sage-bg','rgba(74,222,128,.12)');
+  s.setProperty('--amber','#fbbf24');s.setProperty('--amber-bg','rgba(251,191,36,.12)');
+  s.setProperty('--blue','#60a5fa');  s.setProperty('--blue-bg','rgba(96,165,250,.12)');
+  s.setProperty('--lilac','#a78bfa');s.setProperty('--lilac-bg','rgba(167,139,250,.12)');
+  s.setProperty('--red','#f87171');   s.setProperty('--red-bg','rgba(248,113,113,.12)');
 }
 
 async function clearAll() {
   if (!confirm('Clear ALL data?')) return;
-  await chrome.storage.local.set({ recordings:[], cases:[], runResults:[] });
+  await chrome.storage.local.clear();
+  // Re-save settings so they survive the clear
+  await bg('SAVE_SETTINGS', { s: G.settings });
   G.recordings=[]; G.cases=[]; G.results=[];
+  G.live.steps=[]; G.live.network=[]; G.live.name=''; G.live.id=null;
   renderAll();
   toast('All data cleared', 'info');
 }

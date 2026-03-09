@@ -9,6 +9,8 @@ import jobRoutes from './routes/jobs.js';
 import recordingRoutes from './routes/recordings.js';
 import testCaseRoutes from './routes/testCases.js';
 import resultRoutes from './routes/results.js';
+import credentialRoutes from './routes/credentials.js';
+import environmentRoutes from './routes/environments.js';
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.use('/', jobRoutes);
 app.use('/', recordingRoutes);
 app.use('/', testCaseRoutes);
 app.use('/', resultRoutes);
+app.use('/', credentialRoutes);
+app.use('/', environmentRoutes);
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use((err, req, res, next) => {

@@ -10,11 +10,10 @@ const MAX_TEST_CASES = 1000;
 export const testCases = new Map();
 
 function upsertTestCase(req, res) {
-  const { id, name, type, framework, language, method, apiUrl, expectedStatus, browser, webUrl, steps, createdAt } = req.body;
+  const { id } = req.body;
   if (!id) return res.status(400).json({ error: '`id` is required' });
 
   if (!testCases.has(id) && testCases.size >= MAX_TEST_CASES) {
-    // Find oldest entry with O(n) linear scan instead of sorting
     let oldestId = null;
     let oldestTime = Infinity;
     for (const [k, v] of testCases) {
@@ -24,11 +23,8 @@ function upsertTestCase(req, res) {
     if (oldestId) testCases.delete(oldestId);
   }
 
-  const tc = {
-    id, name, type, framework, language, method,
-    apiUrl, expectedStatus, browser, webUrl, steps,
-    createdAt: createdAt || new Date().toISOString(),
-  };
+  const existing = testCases.get(id) || {};
+  const tc = { ...existing, ...req.body, createdAt: req.body.createdAt || existing.createdAt || new Date().toISOString() };
   testCases.set(id, tc);
   log('info', 'test_case_saved', { id });
   res.status(201).json(tc);

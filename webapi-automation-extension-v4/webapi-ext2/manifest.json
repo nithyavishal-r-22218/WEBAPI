@@ -12,7 +12,8 @@
     "notifications",
     "webRequest",
     "declarativeNetRequest",
-    "alarms"
+    "alarms",
+    "webNavigation"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -30,7 +31,7 @@
         "recorder.js"
       ],
       "run_at": "document_idle",
-      "all_frames": false
+      "all_frames": true
     }
   ],
   "action": {
