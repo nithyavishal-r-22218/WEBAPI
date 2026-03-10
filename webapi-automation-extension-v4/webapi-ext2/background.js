@@ -88,13 +88,25 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       case 'PUSH_PLATFORM': { const r = await pushPlatform(msg.data); reply(r); break; }
       case 'HEALTH_CHECK':  { const r = await healthCheck(msg.url,msg.key); reply(r); break; }
       case 'SCROLL_DETECTED': {
-        // Re-broadcast to all frames in the recording tab so iframes get notified
         if (REC.active && REC.tabId) {
           chrome.tabs.sendMessage(REC.tabId, {type:'SCROLL_DETECTED'}).catch(()=>{});
         }
         reply({ok:true});
         break;
       }
+
+      // Zoho Projects
+      case 'ZOHO_TEST':       { const r = await zohoTest(msg.token, msg.portal, msg.dc); reply(r); break; }
+      case 'ZOHO_PROJECTS':   { const r = await zohoGetProjects(msg.token, msg.portal, msg.dc); reply(r); break; }
+      case 'ZOHO_TASKLISTS':  { const r = await zohoGetTasklists(msg.token, msg.portal, msg.projectId, msg.dc); reply(r); break; }
+      case 'ZOHO_EXPORT':     { const r = await zohoExportTask(msg); reply(r); break; }
+      case 'ZOHO_TASKS':      { const r = await zohoGetTasks(msg.token, msg.portal, msg.projectId, msg.dc); reply(r); break; }
+      case 'ZOHO_TASK_DETAIL':{ const r = await zohoGetTaskDetail(msg.token, msg.portal, msg.projectId, msg.taskId, msg.dc); reply(r); break; }
+      case 'ZOHO_ALL_TASKS':  { const r = await zohoGetAllTasks(msg.token, msg.portal, msg.dc); reply(r); break; }
+      case 'ZOHO_ATTACHMENTS':{ const r = await zohoGetAttachments(msg.token, msg.portal, msg.projectId, msg.taskId, msg.dc); reply(r); break; }
+      case 'ZOHO_DOWNLOAD_ATTACH':{ const r = await zohoDownloadAttachment(msg.token, msg.portal, msg.projectId, msg.taskId, msg.attachId, msg.dc, msg.downloadUrl, msg.fileId); reply(r); break; }
+      case 'ZOHO_TASK_COMMENTS':{ const r = await zohoGetTaskComments(msg.token, msg.portal, msg.projectId, msg.taskId, msg.dc); reply(r); break; }
+
       default: reply({ok:false,err:'unknown:'+msg.type});
     }
   })();
@@ -913,6 +925,27 @@ async function saveResult(r) {
 }
 
 // ══════════════════════════════════════════════════
+//  SHARED XSS PAYLOADS (used by genCode + resolveValue)
+// ══════════════════════════════════════════════════
+const XSS_PAYLOADS = [
+  '<script>alert(1)</script>',
+  '<img src=x onerror=alert(1)>',
+  '<svg onload=alert(1)>',
+  '"><script>alert(1)</script>',
+  "'-alert(1)-'",
+  '<body onload=alert(1)>',
+  '<iframe src="javascript:alert(1)">',
+  '<input onfocus=alert(1) autofocus>',
+  '{{constructor.constructor("alert(1)")()}}',
+  '<details open ontoggle=alert(1)>',
+  '<marquee onstart=alert(1)>',
+  'javascript:alert(document.cookie)',
+  '"><img src=x onerror=alert(document.domain)>',
+  '<math><mtext><table><mglyph><svg><mtext><textarea><path id=x style=d:expression(alert(1))>',
+  'data:text/html,<script>alert(1)</script>'
+];
+
+// ══════════════════════════════════════════════════
 //  CODE GENERATION
 // ══════════════════════════════════════════════════
 function genCode(rec, fw, lang) {
@@ -920,6 +953,62 @@ function genCode(rec, fw, lang) {
   const nets  = rec.network||[];
   const name  = rec.name||'RecordedTest';
   const safe  = name.replace(/[^a-zA-Z0-9]/g,'_');
+  const hasRandom = steps.some(s => s.value && s.value.startsWith('{{random:') && s.value.endsWith('}}'));
+
+  // Parse a {{random:type:len}} token
+  function parseRd(v) {
+    const m = v.match(/^\{\{random:(\w+)(?::(\d+))?\}\}$/);
+    if (!m) return null;
+    return { type: m[1], len: m[2] ? parseInt(m[2]) : 10 };
+  }
+
+  // JS helper functions for random data generation
+  const rdHelpersJS = `// Random data helpers
+function _randStr(n){const c='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';let r='';for(let i=0;i<n;i++)r+=c[Math.floor(Math.random()*c.length)];return r;}
+function _randNum(n){let r='';for(let i=0;i<n;i++)r+=Math.floor(Math.random()*10);if(r[0]==='0'&&n>1)r=(Math.floor(Math.random()*9)+1)+r.slice(1);return r;}
+function _randEmail(){return _randStr(8).toLowerCase()+'@zohotest.com';}
+function _randPara(n){const w=['the','quick','brown','fox','jumps','over','lazy','dog','lorem','ipsum','dolor','sit','amet'];let r='';while(r.length<n)r+=w[Math.floor(Math.random()*w.length)]+' ';return r.slice(0,n);}
+`;
+
+  const rdHelpersPy = `import random, string\n\ndef _rand_str(n):\n    return ''.join(random.choices(string.ascii_letters, k=n))\n\ndef _rand_num(n):\n    return str(random.randint(10**(n-1), 10**n-1)) if n > 1 else str(random.randint(0, 9))\n\ndef _rand_email():\n    return _rand_str(8).lower() + '@zohotest.com'\n\ndef _rand_para(n):\n    words = ['the','quick','brown','fox','jumps','over','lazy','dog','lorem','ipsum']\n    r = ''\n    while len(r) < n: r += random.choice(words) + ' '\n    return r[:n]\n`;
+
+  // Return JS expression for a random token
+  function rdExprJS(v) {
+    const rd = parseRd(v);
+    if (!rd) return "'" + v.replace(/'/g,"\\'") + "'";
+    if (rd.type==='string')    return `_randStr(${rd.len})`;
+    if (rd.type==='number')    return `_randNum(${rd.len})`;
+    if (rd.type==='email')     return `_randEmail()`;
+    if (rd.type==='paragraph') return `_randPara(${rd.len})`;
+    if (rd.type==='xss')       return "'" + (XSS_PAYLOADS[rd.len]||XSS_PAYLOADS[0]).replace(/'/g,"\\'") + "'";
+    return "'" + v.replace(/'/g,"\\'") + "'";
+  }
+
+  // Return Python expression for a random token
+  function rdExprPy(v) {
+    const rd = parseRd(v);
+    if (!rd) return '"' + v.replace(/"/g,'\\"') + '"';
+    if (rd.type==='string')    return `_rand_str(${rd.len})`;
+    if (rd.type==='number')    return `_rand_num(${rd.len})`;
+    if (rd.type==='email')     return `_rand_email()`;
+    if (rd.type==='paragraph') return `_rand_para(${rd.len})`;
+    if (rd.type==='xss')       return '"' + (XSS_PAYLOADS[rd.len]||XSS_PAYLOADS[0]).replace(/"/g,'\\"') + '"';
+    return '"' + v.replace(/"/g,'\\"') + '"';
+  }
+
+  // Return Java expression for a random token
+  function rdExprJava(v) {
+    const rd = parseRd(v);
+    if (!rd) return '"' + v.replace(/"/g,'\\"') + '"';
+    if (rd.type==='string')    return `_randStr(${rd.len})`;
+    if (rd.type==='number')    return `_randNum(${rd.len})`;
+    if (rd.type==='email')     return `_randEmail()`;
+    if (rd.type==='paragraph') return `_randPara(${rd.len})`;
+    if (rd.type==='xss')       return '"' + (XSS_PAYLOADS[rd.len]||XSS_PAYLOADS[0]).replace(/"/g,'\\"') + '"';
+    return '"' + v.replace(/"/g,'\\"') + '"';
+  }
+
+  function isRd(v) { return v && v.startsWith('{{random:') && v.endsWith('}}'); }
 
   // Step converters per framework
   const S = (step) => {
@@ -940,6 +1029,14 @@ function genCode(rec, fw, lang) {
         if(fw==='testcafe')   return `  await t.click(Selector('${t}'));`;
         return `// click ${t}`;
       case 'type':
+        if (isRd(step.value)) {
+          const re = rdExprJS(step.value);
+          if(fw==='playwright') return `  await page.fill('${t}', ${re});`;
+          if(fw==='cypress')    return `    cy.get('${t}').clear().type(${re});`;
+          if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();\n    driver.findElement(By.css("${t}")).sendKeys(${re});`;
+          if(fw==='puppeteer')  return `  await page.type('${t}', ${re});`;
+          if(fw==='testcafe')   return `  await t.typeText(Selector('${t}'), ${re}, { replace: true });`;
+        }
         if(fw==='playwright') return `  await page.fill('${t}', '${v}');`;
         if(fw==='cypress')    return `    cy.get('${t}').clear().type('${v}');`;
         if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();\n    driver.findElement(By.css("${t}")).sendKeys("${v}");`;
@@ -996,7 +1093,7 @@ function genCode(rec, fw, lang) {
   // Language templates
   if(fw==='playwright') {
     if(lang==='javascript') return `const { test, expect } = require('@playwright/test');
-
+${hasRandom ? '\n'+rdHelpersJS : ''}
 /**
  * Generated by WebAPI Automation Tool
  * Recording: ${name}
@@ -1008,7 +1105,7 @@ ${stepsCode}
 ${apiCode?'\n'+apiCode:''}
 });`;
     if(lang==='typescript') return `import { test, expect, Page } from '@playwright/test';
-
+${hasRandom ? '\n'+rdHelpersJS : ''}
 test('${name}', async ({ page }: { page: Page }) => {
 ${stepsCode}
 });`;
@@ -1018,7 +1115,7 @@ ${stepsCode}
         switch(s.action){
           case 'navigate': return `    page.goto("${t}")`;
           case 'click': return `    page.click("${t}")  # ${s.text||''}`;
-          case 'type': return `    page.fill("${t}", "${v}")`;
+          case 'type': return isRd(s.value) ? `    page.fill("${t}", ${rdExprPy(s.value)})` : `    page.fill("${t}", "${v}")`;
           case 'select': return `    page.select_option("${t}", "${v}")`;
           case 'assert_text': return `    expect(page.locator("${t}")).to_contain_text("${v}")`;
           case 'hover': return `    page.hover("${t}")  # ${s.text||''}`;
@@ -1027,14 +1124,14 @@ ${stepsCode}
           default: return `    # ${s.action}: ${t}`;
         }
       }).join('\n');
-      return `import pytest\nfrom playwright.sync_api import Page, expect\n\ndef test_${safe.toLowerCase()}(page: Page):\n    """${name} — ${new Date().toLocaleString()}"""\n\n${py}\n`;
+      return `import pytest\nfrom playwright.sync_api import Page, expect\n${hasRandom ? '\n'+rdHelpersPy+'\n' : ''}\ndef test_${safe.toLowerCase()}(page: Page):\n    """${name} — ${new Date().toLocaleString()}"""\n\n${py}\n`;
     }
     if(lang==='java') {
       const jv = steps.map(s=>{
         switch(s.action){
           case 'navigate': return `        page.navigate("${s.target}");`;
           case 'click': return `        page.click("${s.target}");`;
-          case 'type': return `        page.fill("${s.target}", "${s.value||''}");`;
+          case 'type': return isRd(s.value) ? `        page.fill("${s.target}", ${rdExprJava(s.value)});` : `        page.fill("${s.target}", "${s.value||''}");`;
           case 'assert_text': return `        assertThat(page.locator("${s.target}")).containsText("${s.value||''}");`;
           case 'hover': return `        page.hover("${s.target}");`;
           case 'key': return `        page.keyboard().press("${s.value||''}");`;
@@ -1049,7 +1146,7 @@ ${stepsCode}
         switch(s.action){
           case 'navigate': return `        await Page.GotoAsync("${s.target}");`;
           case 'click': return `        await Page.ClickAsync("${s.target}");`;
-          case 'type': return `        await Page.FillAsync("${s.target}", "${s.value||''}");`;
+          case 'type': return isRd(s.value) ? `        await Page.FillAsync("${s.target}", ${rdExprJS(s.value)});` : `        await Page.FillAsync("${s.target}", "${s.value||''}");`;
           case 'assert_text': return `        await Expect(Page.Locator("${s.target}")).ToContainTextAsync("${s.value||''}");`;
           case 'hover': return `        await Page.HoverAsync("${s.target}");`;
           case 'key': return `        await Page.Keyboard.PressAsync("${s.value||''}");`;
@@ -1063,8 +1160,8 @@ ${stepsCode}
 
   if(fw==='cypress') {
     const body = steps.map(S).join('\n');
-    if(lang==='typescript') return `describe('${name}', () => {\n  it('recorded flow', () => {\n${body}\n  });\n});`;
-    return `describe('${name}', () => {\n  it('recorded flow', () => {\n${body}\n  });\n});`;
+    if(lang==='typescript') return `${hasRandom ? rdHelpersJS+'\n' : ''}describe('${name}', () => {\n  it('recorded flow', () => {\n${body}\n  });\n});`;
+    return `${hasRandom ? rdHelpersJS+'\n' : ''}describe('${name}', () => {\n  it('recorded flow', () => {\n${body}\n  });\n});`;
   }
 
   if(fw==='selenium') {
@@ -1074,7 +1171,7 @@ ${stepsCode}
         switch(s.action){
           case 'navigate': return `        self.driver.get("${t}")`;
           case 'click': return `        self.driver.find_element(By.CSS_SELECTOR, "${t}").click()`;
-          case 'type': return `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys("${v}")`;
+          case 'type': return isRd(s.value) ? `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys(${rdExprPy(s.value)})` : `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys("${v}")`;
           case 'assert_text': return `        assert "${v}" in self.driver.find_element(By.CSS_SELECTOR, "${t}").text`;
           case 'hover': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).move_to_element(self.driver.find_element(By.CSS_SELECTOR, "${t}")).perform()`;
           case 'key': return `        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).send_keys(${v.includes('+') ? v.split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+v.toUpperCase()}).perform()`;
@@ -1082,14 +1179,14 @@ ${stepsCode}
           default: return `        # ${s.action}`;
         }
       }).join('\n');
-      return `import unittest\nfrom selenium import webdriver\nfrom selenium.webdriver.common.by import By\n\nclass ${safe}Test(unittest.TestCase):\n    def setUp(self):\n        self.driver = webdriver.Chrome()\n        self.driver.implicitly_wait(10)\n    def tearDown(self): self.driver.quit()\n\n    def test_flow(self):\n${py}\n\nif __name__ == '__main__': unittest.main()`;
+      return `import unittest\nfrom selenium import webdriver\nfrom selenium.webdriver.common.by import By\n${hasRandom ? '\n'+rdHelpersPy+'\n' : ''}\nclass ${safe}Test(unittest.TestCase):\n    def setUp(self):\n        self.driver = webdriver.Chrome()\n        self.driver.implicitly_wait(10)\n    def tearDown(self): self.driver.quit()\n\n    def test_flow(self):\n${py}\n\nif __name__ == '__main__': unittest.main()`;
     }
     if(lang==='java') {
       const jv = steps.map(s=>{
         switch(s.action){
           case 'navigate': return `        driver.get("${s.target}");`;
           case 'click': return `        driver.findElement(By.cssSelector("${s.target}")).click();`;
-          case 'type': return `        driver.findElement(By.cssSelector("${s.target}")).sendKeys("${s.value||''}");`;
+          case 'type': return isRd(s.value) ? `        driver.findElement(By.cssSelector("${s.target}")).sendKeys(${rdExprJava(s.value)});` : `        driver.findElement(By.cssSelector("${s.target}")).sendKeys("${s.value||''}");`;
           case 'hover': return `        new org.openqa.selenium.interactions.Actions(driver).moveToElement(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
           case 'key': return `        new org.openqa.selenium.interactions.Actions(driver).sendKeys(${(s.value||'').includes('+') ? (s.value||'').split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+(s.value||'').toUpperCase()}).perform();`;
           case 'rightclick': return `        new org.openqa.selenium.interactions.Actions(driver).contextClick(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
@@ -1099,18 +1196,18 @@ ${stepsCode}
       return `import org.junit.jupiter.api.*;\nimport org.openqa.selenium.*;\nimport org.openqa.selenium.chrome.ChromeDriver;\n\nclass ${safe}Test {\n    WebDriver driver;\n    @BeforeEach void setUp(){ driver = new ChromeDriver(); }\n    @AfterEach  void tearDown(){ driver.quit(); }\n\n    @Test void testFlow() {\n${jv}\n    }\n}`;
     }
     const seJs = steps.map(S).join('\n');
-    return `const { Builder, By } = require('selenium-webdriver');\n\ndescribe('${name}', function() {\n  let driver;\n  before(async () => { driver = await new Builder().forBrowser('chrome').build(); });\n  after(async  () => { await driver.quit(); });\n\n  it('flow', async function() {\n${seJs}\n  });\n});`;
+    return `const { Builder, By } = require('selenium-webdriver');\n${hasRandom ? '\n'+rdHelpersJS : ''}\ndescribe('${name}', function() {\n  let driver;\n  before(async () => { driver = await new Builder().forBrowser('chrome').build(); });\n  after(async  () => { await driver.quit(); });\n\n  it('flow', async function() {\n${seJs}\n  });\n});`;
   }
 
   if(fw==='puppeteer') {
     const ppJs = steps.map(S).join('\n');
-    if(lang==='typescript') return `import puppeteer from 'puppeteer';\n\ndescribe('${name}', () => {\n  let browser: puppeteer.Browser, page: puppeteer.Page;\n  beforeAll(async () => { browser = await puppeteer.launch(); page = await browser.newPage(); });\n  afterAll(async  () => await browser.close());\n\n  test('flow', async () => {\n${ppJs}\n  });\n});`;
-    return `const puppeteer = require('puppeteer');\n\ndescribe('${name}', () => {\n  let browser, page;\n  beforeAll(async () => { browser = await puppeteer.launch({headless:'new'}); page = await browser.newPage(); });\n  afterAll(async  () => await browser.close());\n\n  test('flow', async () => {\n${ppJs}\n  });\n});`;
+    if(lang==='typescript') return `import puppeteer from 'puppeteer';\n${hasRandom ? '\n'+rdHelpersJS : ''}\ndescribe('${name}', () => {\n  let browser: puppeteer.Browser, page: puppeteer.Page;\n  beforeAll(async () => { browser = await puppeteer.launch(); page = await browser.newPage(); });\n  afterAll(async  () => await browser.close());\n\n  test('flow', async () => {\n${ppJs}\n  });\n});`;
+    return `const puppeteer = require('puppeteer');\n${hasRandom ? '\n'+rdHelpersJS : ''}\ndescribe('${name}', () => {\n  let browser, page;\n  beforeAll(async () => { browser = await puppeteer.launch({headless:'new'}); page = await browser.newPage(); });\n  afterAll(async  () => await browser.close());\n\n  test('flow', async () => {\n${ppJs}\n  });\n});`;
   }
 
   if(fw==='testcafe') {
     const tcCode = steps.map(S).join('\n');
-    return `import { Selector } from 'testcafe';\n\nfixture('${name}').page('${steps[0]?.target||'http://localhost'}');\n\ntest('recorded flow', async t => {\n${tcCode}\n});`;
+    return `import { Selector } from 'testcafe';\n${hasRandom ? '\n'+rdHelpersJS : ''}\nfixture('${name}').page('${steps[0]?.target||'http://localhost'}');\n\ntest('recorded flow', async t => {\n${tcCode}\n});`;
   }
 
   return `// Framework "${fw}" / Language "${lang}"\n// Steps: ${steps.length}\n${stepsCode}`;
@@ -1354,6 +1451,56 @@ function replaySteps(steps) {
       return new Promise(r => setTimeout(r, ms));
     }
 
+    // Resolve {{random:type:len}} placeholders at execution time
+    const _xssPayloads = [
+      '<script>alert(1)</script>',
+      '<img src=x onerror=alert(1)>',
+      '<svg onload=alert(1)>',
+      '\"><script>alert(1)</script>',
+      "'-alert(1)-'",
+      '<body onload=alert(1)>',
+      '<iframe src=\"javascript:alert(1)\">',
+      '<input onfocus=alert(1) autofocus>',
+      '{{constructor.constructor(\"alert(1)\")()}}',
+      '<details open ontoggle=alert(1)>',
+      '<marquee onstart=alert(1)>',
+      'javascript:alert(document.cookie)',
+      '\"><img src=x onerror=alert(document.domain)>',
+      '<math><mtext><table><mglyph><svg><mtext><textarea><path id=x style=d:expression(alert(1))>',
+      'data:text/html,<script>alert(1)</script>'
+    ];
+    function resolveValue(v) {
+      if (!v || !v.startsWith('{{random:') || !v.endsWith('}}')) return v;
+      const m = v.match(/^\{\{random:(\w+)(?::(\d+))?\}\}$/);
+      if (!m) return v;
+      const type = m[1], len = m[2] ? parseInt(m[2]) : 10;
+      if (type === 'string') {
+        const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        let r = ''; for (let i = 0; i < len; i++) r += c[Math.floor(Math.random()*c.length)];
+        return r;
+      }
+      if (type === 'number') {
+        let r = ''; for (let i = 0; i < len; i++) r += Math.floor(Math.random()*10);
+        if (r[0]==='0' && len>1) r = (Math.floor(Math.random()*9)+1) + r.slice(1);
+        return r;
+      }
+      if (type === 'email') {
+        const c = 'abcdefghijklmnopqrstuvwxyz';
+        let r = ''; for (let i = 0; i < 8; i++) r += c[Math.floor(Math.random()*c.length)];
+        return r + '@zohotest.com';
+      }
+      if (type === 'paragraph') {
+        const words = ['the','quick','brown','fox','jumps','over','lazy','dog','lorem','ipsum','dolor','sit','amet','testing','automation','quality','software','web','browser','data','input','form','field','check','verify'];
+        let r = '';
+        while (r.length < len) { r += words[Math.floor(Math.random()*words.length)] + ' '; }
+        return r.slice(0, len);
+      }
+      if (type === 'xss') {
+        return _xssPayloads[len] || _xssPayloads[0];
+      }
+      return v;
+    }
+
     async function tryStep(s) {
       const el = sel(s.target, s);
       switch (s.action) {
@@ -1371,12 +1518,13 @@ function replaySteps(steps) {
         case 'type':
           if (!el) throw new Error('Element not found: ' + s.target);
           el.focus();
+          const _tv = resolveValue(s.value || '');
           if (s.contenteditable || (el.getAttribute && el.getAttribute('contenteditable') === 'true') || el.isContentEditable) {
             // Contenteditable element (rich text editor body)
-            el.innerText = s.value || '';
+            el.innerText = _tv;
             el.dispatchEvent(new Event('input', { bubbles:true }));
           } else {
-            el.value = s.value || '';
+            el.value = _tv;
             el.dispatchEvent(new Event('input', { bubbles:true }));
             el.dispatchEvent(new Event('change', { bubbles:true }));
           }
@@ -1590,5 +1738,312 @@ async function healthCheck(url, key) {
     return { ok:true, data:d };
   } catch(e) {
     return { ok:false, error:e.message };
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   ZOHO PROJECTS INTEGRATION
+   ══════════════════════════════════════════════════ */
+const ZOHO_API = 'https://projectsapi.zoho.com/restapi';
+
+function zohoBase(dc) {
+  return 'https://projects.zoho' + (dc || '.com') + '/restapi';
+}
+
+async function zohoFetch(token, path, opts = {}, dc) {
+  const url = zohoBase(dc) + path;
+  const headers = { 'Authorization': 'Zoho-oauthtoken ' + token, ...opts.headers };
+  const r = await fetch(url, { ...opts, headers, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error('Zoho API ' + r.status + ': ' + text.slice(0, 200));
+  }
+  return r.json();
+}
+
+async function zohoTest(token, portal, dc) {
+  try {
+    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/', { method: 'GET' }, dc);
+    return { ok: true, count: (d.projects || []).length };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoGetProjects(token, portal, dc) {
+  try {
+    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/?range=100', {}, dc);
+    return { ok: true, projects: d.projects || [] };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoGetTasklists(token, portal, projectId, dc) {
+  try {
+    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasklists/', {}, dc);
+    return { ok: true, tasklists: d.tasklists || [] };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoGetTasks(token, portal, projectId, dc) {
+  try {
+    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/?range=100', {}, dc);
+    return { ok: true, tasks: d.tasks || [] };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoGetAllTasks(token, portal, dc) {
+  try {
+    const projData = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/?range=100', {}, dc);
+    const projects = projData.projects || [];
+    const allTasks = [];
+    for (const p of projects.slice(0, 10)) {
+      try {
+        const td = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + p.id_string + '/tasks/?range=50', {}, dc);
+        (td.tasks || []).forEach(t => {
+          t._projectName = p.name;
+          t._projectId = p.id_string;
+          allTasks.push(t);
+        });
+      } catch(e) { /* skip errored projects */ }
+    }
+    return { ok: true, tasks: allTasks };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoGetTaskDetail(token, portal, projectId, taskId, dc) {
+  try {
+    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/', {}, dc);
+    return { ok: true, task: d.tasks ? d.tasks[0] : d };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoExportTask(msg) {
+  const { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename } = msg;
+  try {
+    const form = new URLSearchParams();
+    form.append('name', taskName);
+    if (taskDesc) form.append('description', taskDesc);
+    if (tasklistId) form.append('tasklist_id', tasklistId);
+
+    const base = zohoBase(dc);
+    const taskResp = await zohoFetch(token,
+      '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/',
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() }, dc
+    );
+    const task = taskResp.tasks ? taskResp.tasks[0] || taskResp.tasks : taskResp;
+    const taskId = task.id_string || task.id;
+
+    const attachResults = [];
+    if (stepsJson) {
+      try {
+        const blob = new Blob([stepsJson], { type: 'application/json' });
+        const fd = new FormData();
+        fd.append('uploaddoc', blob, 'steps.json');
+        const aUrl = base + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
+        const ar = await fetch(aUrl, {
+          method: 'POST',
+          headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+          body: fd,
+          signal: AbortSignal.timeout(15000)
+        });
+        attachResults.push({ name: 'steps.json', ok: ar.ok });
+      } catch(e) { attachResults.push({ name: 'steps.json', ok: false, err: e.message }); }
+    }
+
+    if (codeText) {
+      try {
+        const blob = new Blob([codeText], { type: 'text/plain' });
+        const fd = new FormData();
+        fd.append('uploaddoc', blob, codeFilename || 'test.js');
+        const aUrl = base + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
+        const ar = await fetch(aUrl, {
+          method: 'POST',
+          headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+          body: fd,
+          signal: AbortSignal.timeout(15000)
+        });
+        attachResults.push({ name: codeFilename || 'test.js', ok: ar.ok });
+      } catch(e) { attachResults.push({ name: codeFilename, ok: false, err: e.message }); }
+    }
+
+    // Also store steps JSON as a task comment (reliable retrieval on import)
+    if (stepsJson) {
+      try {
+        const commentBody = new URLSearchParams();
+        const b64 = btoa(unescape(encodeURIComponent(stepsJson)));
+        commentBody.append('content', '⚙️ WebAPI Automation Steps (auto-generated — do not edit)\n\n[WEBAPI_STEPS_B64]' + b64 + '[WEBAPI_STEPS_B64_END]');
+        const cr = await fetch(base + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/comments/', {
+          method: 'POST',
+          headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: commentBody.toString(),
+          signal: AbortSignal.timeout(15000)
+        });
+        const crd = await cr.json().catch(() => ({}));
+        console.log('[ZOHO] Steps comment response:', cr.status, JSON.stringify(crd).slice(0, 200));
+      } catch(e) { console.log('[ZOHO] Failed to add steps comment:', e.message); }
+    }
+
+    return { ok: true, taskId, taskName: task.name, attachments: attachResults };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function zohoGetAttachments(token, portal, projectId, taskId, dc) {
+  // Try v3 API on both possible hosts
+  const hosts = [
+    'https://projectsapi.zoho' + (dc || '.com'),
+    'https://projects.zoho' + (dc || '.com')
+  ];
+  for (const base of hosts) {
+    try {
+      const url = base + '/api/v3/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/attachments?entity_type=task&entity_id=' + taskId;
+      console.log('[ZOHO] Trying attachments URL:', url);
+      const r = await fetch(url, {
+        headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+        signal: AbortSignal.timeout(15000)
+      });
+      console.log('[ZOHO] Attachments response status:', r.status);
+      if (!r.ok) continue;
+      const d = await r.json().catch(() => ({}));
+      console.log('[ZOHO] Attachments response keys:', Object.keys(d));
+      const list = d.attachment || d.attachments || [];
+      console.log('[ZOHO] Attachment list:', JSON.stringify(list.map(a => ({ name: a.name, filename: a.filename, file_name: a.file_name, id: a.id, attachment_id: a.attachment_id, id_string: a.id_string, download_url: a.download_url, content_url: a.content_url }))));
+      if (list.length || d.attachment) return { ok: true, attachments: list };
+    } catch(e) { console.log('[ZOHO] Attachments error:', e.message); }
+  }
+  // Fallback: try v1 REST API
+  try {
+    const url = zohoBase(dc) + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
+    console.log('[ZOHO] Trying v1 attachments URL:', url);
+    const r = await fetch(url, {
+      headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+      signal: AbortSignal.timeout(15000)
+    });
+    const d = await r.json().catch(() => ({}));
+    console.log('[ZOHO] v1 attachments response:', JSON.stringify(d).slice(0, 500));
+    const list = d.attachment || d.attachments || d.files || d.documents || [];
+    return { ok: r.ok, attachments: list, error: r.ok ? undefined : 'HTTP ' + r.status };
+  } catch(e) {
+    return { ok: false, error: e.message, attachments: [] };
+  }
+}
+
+async function zohoDownloadAttachment(token, portal, projectId, taskId, attachId, dc, downloadUrl, fileId) {
+  console.log('[ZOHO] Download attachment - attachId:', attachId, 'taskId:', taskId, 'projectId:', projectId, 'fileId:', fileId);
+  const ep = encodeURIComponent(portal);
+  const h1 = 'https://projectsapi.zoho' + (dc || '.com');
+  const h2 = 'https://projects.zoho' + (dc || '.com');
+  const urls = [];
+  // WorkDrive API v1 — direct file download using third_party_file_id
+  if (fileId) {
+    urls.push('https://workdrive.zoho' + (dc || '.com') + '/api/v1/download/' + fileId);
+    urls.push('https://workdrive.zoho' + (dc || '.com') + '/api/v1/files/' + fileId + '/download');
+  }
+  // Documents API v3
+  if (fileId) {
+    urls.push(h1 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/documents/' + fileId + '?action=download');
+    urls.push(h2 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/documents/' + fileId + '?action=download');
+  }
+  if (downloadUrl) urls.push(downloadUrl);
+  urls.push(
+    h1 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/attachments/' + attachId + '?action=download&entity_type=task&entity_id=' + taskId,
+    h2 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/attachments/' + attachId + '?action=download&entity_type=task&entity_id=' + taskId,
+    zohoBase(dc) + '/portal/' + ep + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/' + attachId + '/',
+    zohoBase(dc) + '/portal/' + ep + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/' + attachId + '/download/',
+  );
+  for (const url of urls) {
+    try {
+      console.log('[ZOHO] Trying download URL:', url);
+      const r = await fetch(url, {
+        headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+        signal: AbortSignal.timeout(15000)
+      });
+      console.log('[ZOHO] Download response:', r.status, r.headers.get('content-type'));
+      if (!r.ok) { console.log('[ZOHO] Download not ok, trying next'); continue; }
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      const text = await r.text();
+      console.log('[ZOHO] Download body preview:', text.slice(0, 200));
+      try {
+        const json = JSON.parse(text);
+        // Check if this is a JSON error response
+        if (json.error) { console.log('[ZOHO] Download returned error JSON:', json.error); continue; }
+        // Skip if this is attachment metadata, not the actual file content
+        if (json.attachment && Array.isArray(json.attachment)) { console.log('[ZOHO] Got attachment metadata instead of file, trying next'); continue; }
+        if (json.attachments && Array.isArray(json.attachments)) { console.log('[ZOHO] Got attachments metadata instead of file, trying next'); continue; }
+        // Could be a response with download_url
+        if (json.download_url) {
+          console.log('[ZOHO] Following download_url:', json.download_url);
+          const r2 = await fetch(json.download_url, { headers: { 'Authorization': 'Zoho-oauthtoken ' + token }, signal: AbortSignal.timeout(15000) });
+          if (r2.ok) { const t2 = await r2.text(); try { return { ok:true, data: JSON.parse(t2), raw: t2 }; } catch(e2) { return { ok:true, data:null, raw:t2 }; } }
+        }
+        return { ok: true, data: json, raw: text };
+      } catch(e) {
+        // Non-JSON response — could be raw file content
+        return { ok: true, data: null, raw: text };
+      }
+    } catch(e) { console.log('[ZOHO] Download error:', e.message); }
+  }
+  return { ok: false, error: 'Could not download attachment from any endpoint' };
+}
+
+async function zohoGetTaskComments(token, portal, projectId, taskId, dc) {
+  try {
+    const url = zohoBase(dc) + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/comments/';
+    console.log('[ZOHO] Getting task comments:', url);
+    const r = await fetch(url, {
+      headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!r.ok) return { ok: false, error: 'HTTP ' + r.status };
+    const d = await r.json().catch(() => ({}));
+    const comments = d.comments || [];
+    console.log('[ZOHO] Comments count:', comments.length);
+    // Find the comment with WEBAPI_STEPS marker — prefer base64 over plain JSON
+    let b64Result = null, plainResult = null;
+    for (const c of comments) {
+      let content = c.content || '';
+      console.log('[ZOHO] Comment preview:', content.slice(0, 100));
+      // Zoho may wrap content in HTML tags or encode entities
+      content = content.replace(/<[^>]+>/g, '').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ');
+      // Try base64 format (preserves {{random:...}} tokens)
+      if (!b64Result) {
+        const mb = content.match(/\[WEBAPI_STEPS_B64\]([\s\S]*?)\[WEBAPI_STEPS_B64_END\]/);
+        if (mb) {
+          try {
+            const steps = JSON.parse(decodeURIComponent(escape(atob(mb[1].trim()))));
+            console.log('[ZOHO] Found base64 steps in comment, steps count:', steps.steps?.length);
+            b64Result = { ok: true, stepsData: steps };
+          } catch(e) { console.log('[ZOHO] Failed to parse base64 steps:', e.message); }
+        }
+      }
+      // Try plain JSON format (legacy fallback)
+      if (!plainResult) {
+        const m = content.match(/\[WEBAPI_STEPS_START\]([\s\S]*?)\[WEBAPI_STEPS_END\]/);
+        if (m) {
+          try {
+            const steps = JSON.parse(m[1]);
+            console.log('[ZOHO] Found plain steps in comment, steps count:', steps.steps?.length);
+            plainResult = { ok: true, stepsData: steps };
+          } catch(e) { console.log('[ZOHO] Failed to parse steps from comment:', e.message); }
+        }
+      }
+      if (b64Result) break; // base64 is preferred, stop early if found
+    }
+    if (b64Result) return b64Result;
+    if (plainResult) return plainResult;
+    return { ok: true, stepsData: null, commentCount: comments.length };
+  } catch(e) {
+    return { ok: false, error: e.message };
   }
 }

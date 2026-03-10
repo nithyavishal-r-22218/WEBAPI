@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════
 const G = {
   recordings:[], cases:[], results:[],
-  settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light' },
+  settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light', zohoToken:'', zohoPortal:'', zohoDC:'.com' },
   live:{ steps:[], network:[], recording:false, name:'', startUrl:'', t0:null, id:null },
   genFW:'playwright', genLang:'javascript', genCode:'', genRecId:'',
   editCaseId:null,
@@ -84,6 +84,66 @@ async function syncResultToGodMode(result) {
 
 const ACT_ICO = { navigate:'🔗', click:'👆', type:'✏', select:'📋', assert_text:'✅', key:'⌨', rightclick:'🖱', scroll_to:'📜', hover:'🫳', default:'⚡' };
 const ACT_CLS = { navigate:'nav', click:'clk', type:'typ', select:'sel2', assert_text:'ast' };
+
+// ── Random data ──
+const XSS_PAYLOADS = [
+  '<script>alert(1)</script>',
+  '<img src=x onerror=alert(1)>',
+  '<svg onload=alert(1)>',
+  '"><script>alert(1)</script>',
+  "'-alert(1)-'",
+  '<body onload=alert(1)>',
+  '<iframe src="javascript:alert(1)">',
+  '<input onfocus=alert(1) autofocus>',
+  '{{constructor.constructor("alert(1)")()}}',
+  '<details open ontoggle=alert(1)>',
+  '<marquee onstart=alert(1)>',
+  "javascript:alert(document.cookie)",
+  '"><img src=x onerror=alert(document.domain)>',
+  '<math><mtext><table><mglyph><svg><mtext><textarea><path id=x style=d:expression(alert(1))>',
+  'data:text/html,<script>alert(1)</script>'
+];
+
+function randomString(len) {
+  const c = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let r = ''; for (let i = 0; i < len; i++) r += c[Math.floor(Math.random()*c.length)];
+  return r;
+}
+function randomNumber(len) {
+  let r = ''; for (let i = 0; i < len; i++) r += Math.floor(Math.random()*10);
+  if (r[0] === '0' && len > 1) r = (Math.floor(Math.random()*9)+1) + r.slice(1);
+  return r;
+}
+function randomEmail() { return randomString(8).toLowerCase() + '@zohotest.com'; }
+function randomParagraph(len) {
+  const words = ['the','quick','brown','fox','jumps','over','lazy','dog','lorem','ipsum','dolor','sit','amet','testing','automation','quality','software','web','browser','data','input','form','field','check','verify','validate','click','submit','text','page','screen','element','button'];
+  let r = '';
+  while (r.length < len) { r += words[Math.floor(Math.random()*words.length)] + ' '; }
+  return r.slice(0, len);
+}
+function generatePreview(type, len, xssIdx) {
+  if (type === 'string')    return randomString(len);
+  if (type === 'number')    return randomNumber(len);
+  if (type === 'email')     return randomEmail();
+  if (type === 'paragraph') return randomParagraph(len);
+  if (type === 'xss')       return XSS_PAYLOADS[xssIdx || 0];
+  return '';
+}
+function isRandomValue(v) { return v && v.startsWith('{{random:') && v.endsWith('}}'); }
+function parseRandomToken(v) {
+  const m = v.match(/^\{\{random:(\w+)(?::(\d+))?\}\}$/);
+  if (!m) return null;
+  return { type: m[1], len: m[2] ? parseInt(m[2]) : undefined };
+}
+function randomTokenLabel(v) {
+  const p = parseRandomToken(v);
+  if (!p) return v;
+  const labels = { string:'String', number:'Number', email:'Email', paragraph:'Paragraph', xss:'XSS' };
+  const ico = { string:'🔤', number:'🔢', email:'📧', paragraph:'📝', xss:'🛡' };
+  let lbl = (ico[p.type]||'🎲') + ' ' + (labels[p.type]||p.type);
+  if (p.len) lbl += ' (' + p.len + ' chars)';
+  return lbl;
+}
 
 // ── Background messenger with retry ─────────────────────────────────────────
 function bg(type, data={}) {
@@ -189,6 +249,7 @@ async function boot() {
         G.live.name    = d.lastStoppedRec.name || '';
         G.live.id      = d.lastStoppedRec.id;
         setRecUI(false);
+        $('saveRecBtn').disabled = false;
       }
     }
     applySettings();
@@ -214,7 +275,7 @@ function bindAll() {
   if ($('inspectBtn')) $('inspectBtn').addEventListener('click', handleInspectClick);
 
   [['t-record','record'],['t-library','library'],['t-generate','generate'],
-   ['t-tests','tests'],['t-results','results'],['t-settings','settings']]
+   ['t-tests','tests'],['t-results','results'],['t-zoho','zoho'],['t-settings','settings']]
   .forEach(([id,pg]) => $(id).addEventListener('click', () => showPg(pg)));
 
   $('heroDiv').addEventListener('click', handleRecClick);
@@ -252,6 +313,58 @@ function bindAll() {
   $('closeStepEditModal').addEventListener('click', () => closeModal('stepEditModal'));
   $('cancelStepEditBtn').addEventListener('click',  () => closeModal('stepEditModal'));
   $('applyStepEditBtn').addEventListener('click', applyStepEdit);
+  $('seAction').addEventListener('change', () => {
+    const ask = $('seRandomAsk');
+    const applied = $('seRandomApplied');
+    if ($('seAction').value === 'type') {
+      if (isRandomValue($('seValue').value)) {
+        ask.style.display = 'none';
+        applied.style.display = 'flex';
+        $('rdAppliedTag').innerHTML = randomTokenLabel($('seValue').value);
+        $('seValue').style.display = 'none';
+      } else {
+        ask.style.display = 'flex';
+        applied.style.display = 'none';
+      }
+    }
+    else { ask.style.display = 'none'; applied.style.display = 'none'; $('seValue').style.display = ''; }
+  });
+  $('seRandomYes').addEventListener('click', openRandomModal);
+  $('seRandomNo').addEventListener('click', () => { $('seRandomAsk').style.display = 'none'; $('seValue').style.display = ''; });
+  $('seRandomEdit').addEventListener('click', openRandomModal);
+  $('seRandomRemove').addEventListener('click', () => {
+    $('seRandomApplied').style.display = 'none';
+    $('seRandomAsk').style.display = 'flex';
+    $('seValue').value = '';
+    $('seValue').style.display = '';
+  });
+
+  // Random data modal
+  $('closeRandomModal').addEventListener('click', () => closeModal('randomModal'));
+  $('cancelRandomBtn').addEventListener('click',  () => closeModal('randomModal'));
+  $('applyRandomBtn').addEventListener('click', applyRandomData);
+  document.querySelectorAll('.rd-type').forEach(el => el.addEventListener('click', () => pickRdType(el)));
+  $('rdLenSlider').addEventListener('input', updateRdPreview);
+
+  // Zoho Projects
+  $('saveZohoBtn').addEventListener('click', saveZohoSettings);
+  $('testZohoBtn').addEventListener('click', testZohoConnection);
+  $('zohoExportBtn').addEventListener('click', openZohoExportModal);
+  $('zohoExpRec').addEventListener('change', () => { $('zohoExportBtn').disabled = !gv('zohoExpRec'); });
+  $('closeZohoExportModal').addEventListener('click', () => closeModal('zohoExportModal'));
+  $('cancelZohoExportBtn').addEventListener('click', () => closeModal('zohoExportModal'));
+  $('doZohoExportBtn').addEventListener('click', doZohoExport);
+  $('zeProject').addEventListener('change', onZeProjectChange);
+  // Import selects
+  $('ziProject').addEventListener('change', onZiProjectChange);
+  $('ziTasklist').addEventListener('change', onZiTasklistChange);
+  $('ziTask').addEventListener('change', () => { $('zohoImportBtn').disabled = !gv('ziTask'); });
+  $('zohoImportBtn').addEventListener('click', openZohoImportModal);
+  $('closeZohoImportModal').addEventListener('click', () => closeModal('zohoImportModal'));
+  $('cancelZohoImportBtn').addEventListener('click', () => closeModal('zohoImportModal'));
+  $('ziImportBtn').addEventListener('click', importZohoTask);
+  $('ziRunBtn').addEventListener('click', runZohoTask);
+
 
   document.querySelectorAll('.ov').forEach(m =>
     m.addEventListener('click', e => { if (e.target === m) m.classList.remove('on'); })
@@ -278,6 +391,7 @@ function bindAll() {
       case 'recToPlatform': recToPlatform(id);      break;
       case 'deleteRec':     deleteRec(id);          break;
       case 'renameRec':    renameRec(id);          break;
+      case 'loadRec':      loadRecording(id);      break;
     }
   });
 }
@@ -334,6 +448,7 @@ function onBgMsg(msg) {
     setRecUI(false);
     renderSteps();
     renderNetCalls();
+    $('saveRecBtn').disabled = false;
     // No need to persist — background.js now auto-saves in stopRec()
     const idx = G.recordings.findIndex(r => r.id === msg.rec.id);
     if (idx >= 0) G.recordings[idx] = msg.rec;
@@ -454,6 +569,8 @@ async function persistRec(rec) {
   if (idx >= 0) G.recordings[idx] = rec;
   else          G.recordings.unshift(rec);
   G.live.id = rec.id;
+  // Keep lastStoppedRec in sync so popup reload shows latest edits
+  await chrome.storage.local.set({ lastStoppedRec: rec });
   $('saveRecBtn').disabled = false;
   updateCounts();
   renderLibrary();
@@ -510,8 +627,14 @@ function renderSteps() {
     const cls = ACT_CLS[s.action] || '';
     const ico = ACT_ICO[s.action] || ACT_ICO.default;
     const tgt = (s.target || s.url || '').slice(0,54);
-    const val = s.value ? '<div class="sv">"' + s.value.slice(0,40) + '"</div>' : '';
-    return '<div class="step ' + cls + '" data-idx="' + i + '">'
+    let val = '';
+    if (s.value && isRandomValue(s.value)) {
+      val = '<div class="sv"><span class="rd-tag">' + randomTokenLabel(s.value) + '</span></div>';
+    } else if (s.value) {
+      val = '<div class="sv">"' + s.value.slice(0,40) + '"</div>';
+    }
+    return '<div class="step ' + cls + '" data-idx="' + i + '" draggable="true">'
+      + '<div class="sdrag" title="Drag to reorder">⠿</div>'
       + '<div class="sn">' + (i+1) + '</div>'
       + '<span class="si">' + ico + '</span>'
       + '<div class="sb" style="cursor:pointer" data-action="editStep" data-id="' + i + '">'
@@ -521,17 +644,39 @@ function renderSteps() {
       + '<button class="sdel" data-action="delStep" data-id="' + i + '">✕</button>'
       + '</div>';
   }).join('') + '</div>';
+  // Attach drag-and-drop
+  initStepDrag();
 }
 
 function editStep(i) {
   const s = G.live.steps[i];
   if (!s) return;
-  // Build inline edit modal content
   $('stepEditTitle').textContent = 'Edit Step ' + (i+1);
   $('seAction').value  = s.action;
   $('seTarget').value  = s.target || s.url || '';
   $('seValue').value   = s.value  || '';
   G._editStepIdx = i;
+  const ask     = $('seRandomAsk');
+  const applied = $('seRandomApplied');
+  if (s.action === 'type') {
+    if (isRandomValue(s.value)) {
+      // Random data already applied — show applied state
+      ask.style.display = 'none';
+      applied.style.display = 'flex';
+      $('rdAppliedTag').innerHTML = randomTokenLabel(s.value);
+      $('seValue').value = s.value;
+      $('seValue').style.display = 'none';
+    } else {
+      // No random data — show Yes/No prompt
+      ask.style.display = 'flex';
+      applied.style.display = 'none';
+      $('seValue').style.display = '';
+    }
+  } else {
+    ask.style.display = 'none';
+    applied.style.display = 'none';
+    $('seValue').style.display = '';
+  }
   openModal('stepEditModal');
 }
 
@@ -545,6 +690,15 @@ function applyStepEdit() {
   s.value  = $('seValue').value;
   closeModal('stepEditModal');
   renderSteps();
+  // Persist to lastStoppedRec so popup reload reflects edits
+  const lsr = {
+    id: G.live.id, name: G.live.name || '',
+    steps: [...G.live.steps], network: [...G.live.network],
+    startUrl: G.live.startUrl || G.live.steps[0]?.url || '',
+    at: new Date().toISOString()
+  };
+  chrome.storage.local.set({ lastStoppedRec: lsr });
+  $('saveRecBtn').disabled = false;
   toast('Step updated', 'info');
 }
 
@@ -566,6 +720,17 @@ function delStep(i) {
   G.live.steps.splice(i,1);
   renderSteps();
   if (!G.live.recording) $('saveRecBtn').disabled = G.live.steps.length === 0;
+  // Persist deletion so popup reload reflects it
+  if (G.live.steps.length) {
+    chrome.storage.local.set({ lastStoppedRec: {
+      id: G.live.id, name: G.live.name || '',
+      steps: [...G.live.steps], network: [...G.live.network],
+      startUrl: G.live.startUrl || G.live.steps[0]?.url || '',
+      at: new Date().toISOString()
+    }});
+  } else {
+    chrome.storage.local.remove('lastStoppedRec');
+  }
 }
 
 function clearSteps() {
@@ -579,6 +744,79 @@ function clearSteps() {
 
 function openNameModal() { sv('nameInput', G.live.name || ''); openModal('nameModal'); }
 function applyName()     { G.live.name = gv('nameInput') || G.live.name; closeModal('nameModal'); toast('Name updated', 'info'); } // kept for compat
+
+// ═══════════════════════════════════════════════════
+//  DRAG-AND-DROP STEP REORDER
+// ═══════════════════════════════════════════════════
+function initStepDrag() {
+  const list = document.querySelector('.steps-list');
+  if (!list) return;
+  let dragIdx = null;
+  list.querySelectorAll('.step').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      dragIdx = parseInt(el.dataset.idx);
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragIdx);
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      list.querySelectorAll('.step').forEach(s => s.classList.remove('drag-over'));
+      dragIdx = null;
+    });
+    el.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const overIdx = parseInt(el.dataset.idx);
+      list.querySelectorAll('.step').forEach(s => s.classList.remove('drag-over'));
+      if (overIdx !== dragIdx) el.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('drag-over');
+    });
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      const fromIdx = dragIdx;
+      const toIdx = parseInt(el.dataset.idx);
+      if (fromIdx === null || fromIdx === toIdx) return;
+      const [moved] = G.live.steps.splice(fromIdx, 1);
+      G.live.steps.splice(toIdx, 0, moved);
+      renderSteps();
+      $('saveRecBtn').disabled = false;
+      // Persist reorder to lastStoppedRec
+      if (G.live.steps.length) {
+        chrome.storage.local.set({ lastStoppedRec: {
+          id: G.live.id, name: G.live.name || '',
+          steps: [...G.live.steps], network: [...G.live.network],
+          startUrl: G.live.startUrl || G.live.steps[0]?.url || '',
+          at: new Date().toISOString()
+        }});
+      }
+      toast('Step moved', 'info');
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════
+//  LOAD RECORDING INTO EDITOR (from Library)
+// ═══════════════════════════════════════════════════
+function loadRecording(id) {
+  const rec = G.recordings.find(r => r.id === id);
+  if (!rec) { toast('Recording not found', 'fail'); return; }
+  G.live.steps   = [...(rec.steps || [])];
+  G.live.network = [...(rec.network || [])];
+  G.live.name    = rec.name || '';
+  G.live.id      = rec.id;
+  G.live.startUrl = rec.startUrl || '';
+  G.live.recording = false;
+  setRecUI(false);
+  renderSteps();
+  renderNetCalls();
+  $('saveRecBtn').disabled = false;
+  chrome.storage.local.set({ lastStoppedRec: rec });
+  showPg('record');
+  toast('📝 Loaded "' + rec.name + '" — edit & save', 'info');
+}
 
 // ═══════════════════════════════════════════════════
 //  LIBRARY
@@ -603,10 +841,11 @@ function renderLibrary() {
     if (steps.length > 4) preview += '<div style="font-size:10.5px;color:var(--t3);padding-left:22px">+' + (steps.length-4) + ' more</div>';
     return '<div class="rcard">'
       + '<div class="rcard-hd">'
-        + '<div class="rthumb">🎬</div>'
-        + '<div class="ri"><div class="rname">'+r.name+'</div>'
+        + '<div class="rthumb" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">🎬</div>'
+        + '<div class="ri" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><div class="rname">'+r.name+'</div>'
           + '<div class="rmeta">'+steps.length+' steps · '+nets.length+' API calls · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
         + '<div class="racts">'
+          + '<button class="ia edit" data-action="loadRec"        data-id="'+r.id+'" title="Edit recording">📝</button>'
           + '<button class="ia add"  data-action="runRec"         data-id="'+r.id+'" title="Run test">▶</button>'
           + '<button class="ia gen"  data-action="jumpGenerate"   data-id="'+r.id+'" title="Generate code">⚡</button>'
           + '<button class="ia"      data-action="renameRec"      data-id="'+r.id+'" title="Rename" style="font-size:11px">✏</button>'
@@ -614,7 +853,7 @@ function renderLibrary() {
           + '<button class="ia del"  data-action="deleteRec"      data-id="'+r.id+'" title="Delete">✕</button>'
         + '</div>'
       + '</div>'
-      + '<div class="rpreview">'+preview+'</div>'
+      + '<div class="rpreview" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">'+preview+'</div>'
       + '</div>';
   }).join('');
 }
@@ -1015,6 +1254,9 @@ function applySettings() {
   sv('sKey',  G.settings.key);
   sv('sFw',   G.settings.fw);
   sv('sLang', G.settings.lang);
+  sv('zohoToken', G.settings.zohoToken || '');
+  sv('zohoPortal', G.settings.zohoPortal || '');
+  sv('zohoDC', G.settings.zohoDC || '.com');
   if (G.settings.theme === 'dark') applyDark(); else applyLight();
 }
 
@@ -1132,6 +1374,7 @@ function showPg(name) {
   if (name === 'tests')    renderTests();
   if (name === 'results')  renderResults();
   if (name === 'generate') populateGenSel();
+  if (name === 'zoho')     populateZohoRecSel();
 }
 
 function openModal(id)  { $(id)?.classList.add('on'); }
@@ -1143,6 +1386,572 @@ function toast(msg, type='info') {
   el.innerHTML = '<div class="tst-dot"></div><span>' + msg + '</span>';
   $('toasts').appendChild(el);
   setTimeout(() => el.remove(), 3000);
+}
+
+// ═══════════════════════════════════════════════════
+//  RANDOM DATA MODAL
+// ═══════════════════════════════════════════════════
+let _rdType = 'string', _rdLen = 10, _rdXssIdx = 0;
+
+function openRandomModal() {
+  _rdType = 'string'; _rdLen = 10; _rdXssIdx = 0;
+  // Check if current value is already random
+  const cur = $('seValue').value;
+  if (isRandomValue(cur)) {
+    const p = parseRandomToken(cur);
+    if (p) {
+      _rdType = p.type;
+      if (p.len) _rdLen = p.len;
+      if (p.type === 'xss' && p.len !== undefined) _rdXssIdx = p.len;
+    }
+  }
+  // Reset UI
+  document.querySelectorAll('.rd-type').forEach(el => el.classList.toggle('on', el.dataset.rtype === _rdType));
+  $('rdLenSlider').value = _rdLen;
+  $('rdLenVal').textContent = _rdLen;
+  renderRdConfig();
+  updateRdPreview();
+  renderXssList();
+  openModal('randomModal');
+}
+
+function pickRdType(el) {
+  _rdType = el.dataset.rtype;
+  document.querySelectorAll('.rd-type').forEach(t => t.classList.toggle('on', t === el));
+  renderRdConfig();
+  updateRdPreview();
+  if (_rdType === 'xss') renderXssList();
+}
+
+function renderRdConfig() {
+  $('rdLenConfig').style.display   = (_rdType === 'string' || _rdType === 'number' || _rdType === 'paragraph') ? '' : 'none';
+  $('rdEmailConfig').style.display = _rdType === 'email' ? '' : 'none';
+  $('rdXssConfig').style.display   = _rdType === 'xss' ? '' : 'none';
+  // Adjust slider range per type
+  if (_rdType === 'string')    { $('rdLenSlider').min=1; $('rdLenSlider').max=100; }
+  if (_rdType === 'number')    { $('rdLenSlider').min=1; $('rdLenSlider').max=20; }
+  if (_rdType === 'paragraph') { $('rdLenSlider').min=10; $('rdLenSlider').max=500; }
+}
+
+function updateRdPreview() {
+  _rdLen = parseInt($('rdLenSlider').value) || 10;
+  $('rdLenVal').textContent = _rdLen;
+  $('rdPreview').textContent = generatePreview(_rdType, _rdLen, _rdXssIdx);
+}
+
+function renderXssList() {
+  $('rdXssList').innerHTML = XSS_PAYLOADS.map((x, i) =>
+    '<div class="rd-xss' + (i === _rdXssIdx ? ' on' : '') + '" data-xidx="' + i + '">' + escHtml(x) + '</div>'
+  ).join('');
+  $('rdXssList').querySelectorAll('.rd-xss').forEach(el =>
+    el.addEventListener('click', () => {
+      _rdXssIdx = parseInt(el.dataset.xidx);
+      $('rdXssList').querySelectorAll('.rd-xss').forEach(x => x.classList.toggle('on', x === el));
+      $('rdPreview').textContent = XSS_PAYLOADS[_rdXssIdx];
+    })
+  );
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function applyRandomData() {
+  let token;
+  if (_rdType === 'xss')        token = '{{random:xss:' + _rdXssIdx + '}}';
+  else if (_rdType === 'email') token = '{{random:email}}';
+  else                          token = '{{random:' + _rdType + ':' + _rdLen + '}}';
+  $('seValue').value = token;
+  $('seValue').style.display = 'none';
+  // Switch to applied state
+  $('seRandomAsk').style.display = 'none';
+  $('seRandomApplied').style.display = 'flex';
+  $('rdAppliedTag').innerHTML = randomTokenLabel(token);
+  closeModal('randomModal');
+  toast('🎲 Random ' + _rdType + ' applied', 'pass');
+}
+
+// ═══════════════════════════════════════════════════
+//  ZOHO PROJECTS INTEGRATION
+// ═══════════════════════════════════════════════════
+
+function getZohoCreds() {
+  return { token: G.settings.zohoToken, portal: G.settings.zohoPortal, dc: G.settings.zohoDC || '.com' };
+}
+
+async function saveZohoSettings() {
+  G.settings.zohoToken  = gv('zohoToken');
+  G.settings.zohoPortal = gv('zohoPortal');
+  G.settings.zohoDC     = gv('zohoDC') || '.com';
+  await bg('SAVE_SETTINGS', { s: G.settings });
+  toast('Zoho settings saved!', 'pass');
+}
+
+async function testZohoConnection() {
+  const token = gv('zohoToken'), portal = gv('zohoPortal'), dc = gv('zohoDC') || '.com';
+  if (!token || !portal) { toast('Enter token & portal first', 'fail'); return; }
+  const st = $('zohoConnStatus');
+  st.style.display = 'block';
+  st.style.background = 'rgba(59,130,246,.1)';
+  st.style.color = '#60a5fa';
+  st.textContent = 'Testing connection…';
+  const r = await bg('ZOHO_TEST', { token, portal, dc });
+  if (r?.ok) {
+    st.style.background = 'rgba(34,197,94,.1)';
+    st.style.color = '#22c55e';
+    st.textContent = '✓ Connected — ' + r.count + ' project(s) found';
+    // auto-save on success
+    G.settings.zohoToken = token;
+    G.settings.zohoPortal = portal;
+    G.settings.zohoDC = dc;
+    await bg('SAVE_SETTINGS', { s: G.settings });
+  } else {
+    st.style.background = 'rgba(239,68,68,.1)';
+    st.style.color = '#ef4444';
+    st.textContent = '✗ ' + (r?.error || 'Connection failed');
+  }
+}
+
+function populateZohoRecSel() {
+  const sel = $('zohoExpRec'), cur = sel.value;
+  sel.innerHTML = '<option value="">— Select —</option>'
+    + G.recordings.map(r =>
+      '<option value="' + r.id + '">' + escHtml(r.name) + ' (' + (r.steps?.length || 0) + ' steps)</option>'
+    ).join('');
+  if (cur && G.recordings.find(r => r.id === cur)) sel.value = cur;
+  $('zohoExportBtn').disabled = !sel.value;
+  // Also load import projects
+  loadZiProjects();
+}
+
+async function openZohoExportModal() {
+  const recId = gv('zohoExpRec');
+  if (!recId) { toast('Select a recording first', 'fail'); return; }
+  const rec = G.recordings.find(r => r.id === recId);
+  if (!rec) return;
+  const { token, portal } = getZohoCreds();
+  if (!token || !portal) { toast('Configure Zoho connection first', 'fail'); return; }
+  const dc = getZohoCreds().dc;
+
+  // Pre-fill
+  $('zeRecName').textContent = rec.name + ' (' + (rec.steps?.length || 0) + ' steps)';
+  $('zeTaskName').value = rec.name;
+  $('zeTaskDesc').value = 'Automated test: ' + rec.name + '\nSteps: ' + (rec.steps?.length || 0) + '\nURL: ' + (rec.startUrl || rec.steps?.[0]?.target || '—');
+  $('zeProject').innerHTML = '<option value="">Loading…</option>';
+  $('zeTasklist').innerHTML = '<option value="">Select a project first</option>';
+  $('zeTasklist').disabled = true;
+  $('zeStatus').style.display = 'none';
+  $('doZohoExportBtn').disabled = false;
+  openModal('zohoExportModal');
+
+  // Load projects
+  const r = await bg('ZOHO_PROJECTS', { token, portal, dc });
+  if (r?.ok) {
+    $('zeProject').innerHTML = '<option value="">— Select project —</option>'
+      + (r.projects || []).map(p => '<option value="' + p.id_string + '">' + escHtml(p.name) + '</option>').join('');
+  } else {
+    $('zeProject').innerHTML = '<option value="">Failed to load projects</option>';
+    toast('✗ ' + (r?.error || 'Could not load projects'), 'fail');
+  }
+}
+
+async function onZeProjectChange() {
+  const projectId = gv('zeProject');
+  const tl = $('zeTasklist');
+  if (!projectId) {
+    tl.innerHTML = '<option value="">Select a project first</option>';
+    tl.disabled = true;
+    return;
+  }
+  tl.innerHTML = '<option value="">Loading…</option>';
+  tl.disabled = true;
+  const { token, portal, dc } = getZohoCreds();
+  const r = await bg('ZOHO_TASKLISTS', { token, portal, dc, projectId });
+  if (r?.ok) {
+    tl.innerHTML = '<option value="">(No tasklist / default)</option>'
+      + (r.tasklists || []).map(t => '<option value="' + t.id_string + '">' + escHtml(t.name) + '</option>').join('');
+    tl.disabled = false;
+  } else {
+    tl.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+async function doZohoExport() {
+  const recId = gv('zohoExpRec');
+  const rec = G.recordings.find(r => r.id === recId);
+  if (!rec) return;
+  const projectId  = gv('zeProject');
+  const tasklistId = gv('zeTasklist');
+  const taskName   = gv('zeTaskName') || rec.name;
+  const taskDesc   = $('zeTaskDesc').value || '';
+  if (!projectId) { toast('Select a project', 'fail'); return; }
+  const { token, portal, dc } = getZohoCreds();
+
+  const st = $('zeStatus');
+  st.style.display = 'block';
+  st.style.background = 'rgba(59,130,246,.1)';
+  st.style.color = '#60a5fa';
+  st.textContent = 'Exporting…';
+  $('doZohoExportBtn').disabled = true;
+
+  // Prepare attachments
+  const attachSteps = $('zeAttachSteps').checked;
+  const attachCode  = $('zeAttachCode').checked;
+  let stepsJson = null, codeText = null, codeFilename = null;
+
+  if (attachSteps) {
+    stepsJson = JSON.stringify({ name: rec.name, steps: rec.steps, startUrl: rec.startUrl, network: rec.network }, null, 2);
+  }
+  if (attachCode) {
+    const codeR = await bg('GEN_CODE', { rec, fw: G.settings.fw, lang: G.settings.lang });
+    if (codeR?.code) {
+      codeText = codeR.code;
+      const ext = { javascript:'.js', typescript:'.ts', python:'.py', java:'.java', csharp:'.cs' }[G.settings.lang] || '.js';
+      codeFilename = rec.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + ext;
+    }
+  }
+
+  const r = await bg('ZOHO_EXPORT', { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename });
+  if (r?.ok) {
+    st.style.background = 'rgba(34,197,94,.1)';
+    st.style.color = '#22c55e';
+    let msg = '✓ Task created: ' + (r.taskName || taskName);
+    if (r.attachments?.length) {
+      const ok = r.attachments.filter(a => a.ok).length;
+      msg += ' · ' + ok + '/' + r.attachments.length + ' attachments';
+    }
+    st.textContent = msg;
+    toast('📤 Exported to Zoho!', 'pass');
+  } else {
+    st.style.background = 'rgba(239,68,68,.1)';
+    st.style.color = '#ef4444';
+    st.textContent = '✗ ' + (r?.error || 'Export failed');
+    $('doZohoExportBtn').disabled = false;
+  }
+}
+
+// ── Zoho Import ──────────────────────────────────────
+let _zohoTasks = [];
+let _zohoSelectedTask = null;
+let _zohoImportedSteps = null;
+
+async function loadZiProjects() {
+  const { token, portal, dc } = getZohoCreds();
+  if (!token || !portal) return;
+  const sel = $('ziProject');
+  sel.innerHTML = '<option value="">Loading…</option>';
+  const r = await bg('ZOHO_PROJECTS', { token, portal, dc });
+  if (r?.ok) {
+    sel.innerHTML = '<option value="">— Select project —</option>'
+      + (r.projects || []).map(p => '<option value="' + p.id_string + '">' + escHtml(p.name) + '</option>').join('');
+  } else {
+    sel.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+async function onZiProjectChange() {
+  const projectId = gv('ziProject');
+  const tl = $('ziTasklist');
+  const tk = $('ziTask');
+  tk.innerHTML = '<option value="">Select a tasklist/project first</option>';
+  tk.disabled = true;
+  $('zohoImportBtn').disabled = true;
+  if (!projectId) {
+    tl.innerHTML = '<option value="">Select a project first</option>';
+    tl.disabled = true;
+    return;
+  }
+  tl.innerHTML = '<option value="">Loading…</option>';
+  tl.disabled = true;
+  const { token, portal, dc } = getZohoCreds();
+
+  // Load tasklists
+  const r = await bg('ZOHO_TASKLISTS', { token, portal, dc, projectId });
+  if (r?.ok) {
+    tl.innerHTML = '<option value="_all">All tasks (no filter)</option>'
+      + (r.tasklists || []).map(t => '<option value="' + t.id_string + '">' + escHtml(t.name) + '</option>').join('');
+    tl.disabled = false;
+  } else {
+    tl.innerHTML = '<option value="">Failed to load</option>';
+  }
+  // Also load all tasks for this project
+  await loadZiTasks(projectId, null);
+}
+
+async function onZiTasklistChange() {
+  const projectId = gv('ziProject');
+  const tasklistId = gv('ziTasklist');
+  if (!projectId) return;
+  await loadZiTasks(projectId, tasklistId === '_all' ? null : tasklistId);
+}
+
+async function loadZiTasks(projectId, tasklistId) {
+  const tk = $('ziTask');
+  tk.innerHTML = '<option value="">Loading tasks…</option>';
+  tk.disabled = true;
+  $('zohoImportBtn').disabled = true;
+  const { token, portal, dc } = getZohoCreds();
+  const r = await bg('ZOHO_TASKS', { token, portal, dc, projectId });
+  if (r?.ok) {
+    let tasks = r.tasks || [];
+    // Filter by tasklist if specified
+    if (tasklistId) {
+      tasks = tasks.filter(t => {
+        const tlId = t.tasklist?.id_string || t.tasklist_id;
+        return tlId === tasklistId;
+      });
+    }
+    _zohoTasks = tasks;
+    if (!tasks.length) {
+      tk.innerHTML = '<option value="">No tasks found</option>';
+      return;
+    }
+    tk.innerHTML = '<option value="">— Select task —</option>'
+      + tasks.map(t => {
+        const badge = t.status?.name || 'Open';
+        return '<option value="' + (t.id_string || t.id) + '">' + escHtml(t.name) + ' [' + badge + ']</option>';
+      }).join('');
+    tk.disabled = false;
+  } else {
+    tk.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+async function openZohoImportModal() {
+  const projectId = gv('ziProject');
+  const taskId = gv('ziTask');
+  if (!projectId || !taskId) { toast('Select a task first', 'fail'); return; }
+
+  const { token, portal, dc } = getZohoCreds();
+  _zohoSelectedTask = { projectId, taskId };
+  _zohoImportedSteps = null;
+
+  $('ziTitle').textContent = 'Loading…';
+  $('ziDetail').innerHTML = '<div style="text-align:center;padding:20px;color:var(--t3)">Loading task details…</div>';
+  $('ziAttachInfo').innerHTML = '';
+  $('ziImportStatus').style.display = 'none';
+  $('ziRunBtn').disabled = true;
+  $('ziImportBtn').disabled = true;
+  openModal('zohoImportModal');
+
+  // Load task detail
+  const r = await bg('ZOHO_TASK_DETAIL', { token, portal, dc, projectId, taskId });
+  if (!r?.ok) {
+    $('ziTitle').textContent = 'Error';
+    $('ziDetail').innerHTML = '<div style="color:#ef4444">' + escHtml(r?.error || 'Failed') + '</div>';
+    return;
+  }
+
+  const task = r.task;
+  _zohoSelectedTask.task = task;
+  $('ziTitle').textContent = task.name || 'Task';
+  $('ziDetail').innerHTML = '<table style="width:100%;font-size:11.5px;border-collapse:collapse">'
+    + '<tr><td style="color:var(--t3);padding:4px 8px 4px 0;white-space:nowrap">Status</td><td style="color:var(--t1)">' + escHtml(task.status?.name || 'Open') + '</td></tr>'
+    + '<tr><td style="color:var(--t3);padding:4px 8px 4px 0">Priority</td><td style="color:var(--t1)">' + escHtml(task.priority || '—') + '</td></tr>'
+    + '<tr><td style="color:var(--t3);padding:4px 8px 4px 0">Progress</td><td style="color:var(--t1)">' + (task.percent_complete || 0) + '%</td></tr>'
+    + (task.description ? '<tr><td style="color:var(--t3);padding:4px 8px 4px 0;vertical-align:top">Desc</td><td style="color:var(--t1);word-break:break-word">' + escHtml(task.description).replace(/&lt;br\/?&gt;/g, '<br>').replace(/\n/g, '<br>') + '</td></tr>' : '')
+    + '</table>';
+
+  // Load attachments
+  $('ziAttachInfo').innerHTML = '<span style="color:var(--t3)">📎 Checking attachments…</span>';
+  const ar = await bg('ZOHO_ATTACHMENTS', { token, portal, dc, projectId, taskId });
+  const attachments = ar?.attachments || [];
+  // Search for steps JSON across common field names (may have timestamp in name)
+  const stepsAttach = attachments.find(a => {
+    const fn = (a.filename || a.name || a.file_name || a.display_name || '').toLowerCase();
+    return fn.startsWith('steps') && fn.endsWith('.json');
+  });
+
+  if (ar && !ar.ok && ar.error) {
+    $('ziAttachInfo').innerHTML = '<span style="color:#ef4444">📎 Attachment check failed: ' + escHtml(ar.error) + '</span>';
+  } else if (stepsAttach) {
+    const stepsName = stepsAttach.filename || stepsAttach.name || stepsAttach.file_name || stepsAttach.display_name || 'steps.json';
+    $('ziAttachInfo').innerHTML = '<span style="color:#22c55e">📎 ' + escHtml(stepsName) + ' found — will be imported with test steps</span>';
+    _zohoSelectedTask.stepsAttachId = stepsAttach.attachment_id || stepsAttach.id || stepsAttach.id_string;
+    _zohoSelectedTask.stepsDownloadUrl = stepsAttach.download_url || stepsAttach.content_url || '';
+    _zohoSelectedTask.stepsFileId = stepsAttach.third_party_file_id || '';
+  } else if (attachments.length) {
+    const names = attachments.map(a => a.filename || a.name || a.file_name || a.display_name || '?').join(', ');
+    $('ziAttachInfo').innerHTML = '<span style="color:#f59e0b">📎 ' + attachments.length + ' attachment(s) found (' + escHtml(names) + ') but no steps.json</span>';
+  } else {
+    $('ziAttachInfo').innerHTML = '<span style="color:var(--t3)">📎 No attachments — task will import without steps</span>';
+  }
+
+  $('ziRunBtn').disabled = false;
+  $('ziImportBtn').disabled = false;
+}
+
+async function fetchStepsFromAttachment() {
+  const { token, portal, dc } = getZohoCreds();
+  const { projectId, taskId, stepsAttachId, stepsDownloadUrl, stepsFileId } = _zohoSelectedTask || {};
+
+  // Try 1: Download via documents API or attachment file directly
+  if (stepsAttachId) {
+    console.log('[ZOHO] Trying attachment download:', stepsAttachId, 'fileId:', stepsFileId);
+    const r = await bg('ZOHO_DOWNLOAD_ATTACH', { token, portal, dc, projectId, taskId, attachId: stepsAttachId, downloadUrl: stepsDownloadUrl, fileId: stepsFileId });
+    console.log('[ZOHO] Attachment download result:', JSON.stringify(r).slice(0, 300));
+    if (r?.ok) {
+      if (r.data && r.data.steps) return r.data;
+      if (r.raw) { try { const p = JSON.parse(r.raw); if (p.steps) return p; } catch(e) {} }
+    }
+  }
+
+  // Try 2: Read steps from task comment (reliable fallback)
+  if (projectId && taskId) {
+    console.log('[ZOHO] Trying comments fallback');
+    const cr = await bg('ZOHO_TASK_COMMENTS', { token, portal, dc, projectId, taskId });
+    console.log('[ZOHO] Comments result:', JSON.stringify(cr).slice(0, 300));
+    if (cr?.ok && cr.stepsData) return cr.stepsData;
+  }
+
+  return null;
+}
+
+async function importZohoTask() {
+  if (!_zohoSelectedTask?.task) return;
+  const task = _zohoSelectedTask.task;
+  const st = $('ziImportStatus');
+
+  st.style.display = 'block';
+  st.style.background = 'rgba(59,130,246,.1)';
+  st.style.color = '#60a5fa';
+  st.textContent = 'Importing…';
+  $('ziImportBtn').disabled = true;
+
+  // Download steps (from attachment or comment)
+  let stepsData = null;
+  st.textContent = 'Downloading steps…';
+  stepsData = await fetchStepsFromAttachment();
+
+  const rec = {
+    id: uid(),
+    name: '[Zoho] ' + (task.name || 'Imported'),
+    steps: stepsData?.steps || [],
+    network: stepsData?.network || [],
+    startUrl: stepsData?.startUrl || '',
+    at: new Date().toISOString(),
+    zohoTaskId: task.id_string || task.id,
+    zohoProjectId: _zohoSelectedTask.projectId
+  };
+
+  G.recordings.push(rec);
+  await bg('SAVE_REC', { rec });
+
+  const stepCount = rec.steps.length;
+  st.style.background = 'rgba(34,197,94,.1)';
+  st.style.color = '#22c55e';
+  st.textContent = '✓ Imported with ' + stepCount + ' step(s)' + (stepCount ? '' : ' — no steps.json found');
+
+  toast('📥 Imported: ' + rec.name + ' (' + stepCount + ' steps)', 'pass');
+  setTimeout(() => { closeModal('zohoImportModal'); showPg('library'); }, 1200);
+}
+
+async function runZohoTask() {
+  if (!_zohoSelectedTask?.task) return;
+  const task = _zohoSelectedTask.task;
+  const st = $('ziImportStatus');
+
+  // Check if we already have this task imported with steps
+  let rec = G.recordings.find(r => r.zohoTaskId === (task.id_string || task.id) && r.steps?.length > 0);
+
+  if (!rec) {
+    // Need to import first
+    st.style.display = 'block';
+    st.style.background = 'rgba(59,130,246,.1)';
+    st.style.color = '#60a5fa';
+    st.textContent = 'Downloading steps…';
+
+    let stepsData = await fetchStepsFromAttachment();
+
+    if (!stepsData?.steps?.length) {
+      st.style.background = 'rgba(239,68,68,.1)';
+      st.style.color = '#ef4444';
+      st.textContent = '✗ No steps found on this task — cannot run';
+      toast('No steps found — export a recording with steps first', 'fail');
+      return;
+    }
+
+    rec = {
+      id: uid(),
+      name: '[Zoho] ' + (task.name || 'Test'),
+      steps: stepsData.steps,
+      network: stepsData.network || [],
+      startUrl: stepsData.startUrl || '',
+      at: new Date().toISOString(),
+      zohoTaskId: task.id_string || task.id,
+      zohoProjectId: _zohoSelectedTask.projectId
+    };
+    G.recordings.push(rec);
+    await bg('SAVE_REC', { rec });
+  }
+
+  st.style.display = 'block';
+  st.style.background = 'rgba(59,130,246,.1)';
+  st.style.color = '#60a5fa';
+  st.textContent = 'Running ' + rec.steps.length + ' steps…';
+
+  closeModal('zohoImportModal');
+  setTimeout(() => window.close(), 300);
+  // Run via background using RUN_CASE
+  const fakeCase = {
+    id:              'run_' + rec.id,
+    name:            rec.name,
+    type:            'WEB',
+    framework:       'playwright',
+    browser:         'chromium',
+    webUrl:          rec.startUrl || rec.steps[0]?.url || '',
+    steps:           rec.steps.map(s => s.action + ' ' + (s.target||s.url||'')).join('\n'),
+    _recordingSteps: rec.steps,
+    method:          'GET',
+    expectedStatus:  200
+  };
+  const result = await bg('RUN_CASE', { c: fakeCase });
+  if (result) {
+    const run = {
+      id: uid(),
+      recId: rec.id,
+      recName: rec.name,
+      ts: Date.now(),
+      ...result
+    };
+    G.results.unshift(run);
+    await bg('SAVE_RESULTS', { results: G.results });
+
+    // Upload report back to Zoho
+    const { token, portal, dc } = getZohoCreds();
+    if (token && portal && _zohoSelectedTask.projectId) {
+      try {
+        const reportText = '== Test Report ==\n'
+          + 'Recording: ' + rec.name + '\n'
+          + 'Status: ' + (result.pass ? 'PASSED ✓' : 'FAILED ✗') + '\n'
+          + 'Steps: ' + (result.stepsRun || 0) + '/' + (rec.steps?.length || 0) + '\n'
+          + 'Duration: ' + dur(result.duration || 0) + '\n'
+          + 'Time: ' + new Date().toISOString() + '\n'
+          + (result.error ? 'Error: ' + result.error + '\n' : '');
+
+        await bg('ZOHO_EXPORT', {
+          token, portal, dc,
+          projectId: _zohoSelectedTask.projectId,
+          tasklistId: '',
+          taskName: '',
+          taskDesc: '',
+          stepsJson: null,
+          codeText: reportText,
+          codeFilename: 'test_report_' + Date.now() + '.txt',
+          _existingTaskId: task.id_string || task.id
+        });
+      } catch(e) { /* best effort */ }
+    }
+
+    openModal('runModal');
+    $('runMTitle').textContent = result.pass ? '✅ Test Passed' : '❌ Test Failed';
+    $('runMBody').innerHTML = '<div style="font-size:12px">'
+      + '<div><strong>Recording:</strong> ' + escHtml(rec.name) + '</div>'
+      + '<div><strong>Status:</strong> ' + (result.pass ? '<span style="color:#22c55e">PASSED</span>' : '<span style="color:#ef4444">FAILED</span>') + '</div>'
+      + '<div><strong>Steps:</strong> ' + (result.stepsRun || 0) + '/' + (rec.steps?.length || 0) + '</div>'
+      + '<div><strong>Duration:</strong> ' + dur(result.duration || 0) + '</div>'
+      + (result.error ? '<div style="color:#ef4444;margin-top:8px"><strong>Error:</strong> ' + escHtml(result.error) + '</div>' : '')
+      + '</div>';
+    toast(result.pass ? '✅ Test passed!' : '❌ Test failed', result.pass ? 'pass' : 'fail');
+  }
 }
 
 boot();

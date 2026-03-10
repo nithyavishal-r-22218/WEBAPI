@@ -34,9 +34,10 @@
   --blur:blur(16px);
   --blur-s:blur(10px);
 }
-html{background:transparent !important;margin:0;padding:0}
-body{font-family:"DM Sans",system-ui,sans-serif;font-size:13px;line-height:1.5;background:transparent !important;color:var(--tx);width:536px;height:616px;margin:0;padding:8px;overflow:hidden;-webkit-font-smoothing:antialiased;position:relative}
-.app-frame{width:520px;height:600px;display:flex;flex-direction:column;overflow:hidden;border-radius:20px;background:var(--bg);position:relative;box-shadow:0 8px 32px rgba(30,64,175,.15),0 2px 8px rgba(0,0,0,.08),0 0 0 1px rgba(148,163,184,.08)}
+html{margin:0;padding:0}
+body{font-family:"DM Sans",system-ui,sans-serif;font-size:13px;line-height:1.5;background:var(--bg);color:var(--tx);width:520px;height:600px;margin:0;padding:0;overflow:hidden;-webkit-font-smoothing:antialiased;position:relative}
+
+.app-frame{width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden;background:transparent;position:relative}
 button,input,select,textarea{font-family:inherit;font-size:inherit}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(59,130,246,.25);border-radius:4px}
 
@@ -103,13 +104,18 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 .hero-foot b{color:var(--t2);font-weight:600}
 
 .sec-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-.sec-lbl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.9px}
+.sec-lbl{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.9px}
 .sec-cnt{font-size:11.5px;font-weight:700;color:var(--blue)}
 .sbtn-row{display:flex;gap:5px}
 
 .steps-list{display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto}
 .step{display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--glass);backdrop-filter:var(--blur-s);-webkit-backdrop-filter:var(--blur-s);border:1px solid var(--glassborder);border-radius:var(--r);transition:all .15s}
 .step:hover{border-color:rgba(59,130,246,.25);box-shadow:var(--shm);transform:translateX(2px)}
+.step.dragging{opacity:.4;border-color:rgba(99,102,241,.4);box-shadow:0 0 15px rgba(99,102,241,.15)}
+.step.drag-over{border-color:rgba(59,130,246,.5);box-shadow:0 0 0 2px rgba(59,130,246,.15);transform:scale(1.01)}
+.sdrag{width:16px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--t4);cursor:grab;flex-shrink:0;opacity:.5;transition:all .15s;user-select:none}
+.sdrag:hover{opacity:1;color:var(--t2)}
+.step.dragging .sdrag{cursor:grabbing}
 .sn{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:"DM Mono",monospace;background:var(--glass3);color:var(--t3);flex-shrink:0}
 .si{font-size:13px;width:16px;text-align:center;flex-shrink:0}
 .sb{flex:1;min-width:0}
@@ -148,6 +154,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 .ia:hover{background:var(--glass);border-color:rgba(59,130,246,.2);color:var(--tx)}
 .ia.gen:hover{background:var(--blue-bg);border-color:rgba(79,124,255,.2);color:var(--blue)}
 .ia.add:hover{background:var(--mint-bg);border-color:rgba(0,200,150,.2);color:var(--mint)}
+.ia.edit:hover{background:var(--lilac-bg);border-color:rgba(167,139,250,.2);color:var(--lilac)}
 .ia.push:hover{background:var(--lilac-bg);border-color:rgba(167,139,250,.2);color:var(--lilac)}
 .ia.del:hover{background:var(--red-bg);border-color:rgba(240,91,91,.2);color:var(--red)}
 .rpreview{padding:8px 13px 10px;border-top:1px solid var(--b);background:var(--glass3);max-height:88px;overflow-y:auto}
@@ -206,12 +213,13 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 
 /* FORM */
 .fld{margin-bottom:10px}
-.fld label{display:block;font-size:10.5px;font-weight:600;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.2px}
-.inp,.sel,.ta{width:100%;padding:8px 11px;background:var(--glass);backdrop-filter:var(--blur-s);-webkit-backdrop-filter:var(--blur-s);border:1px solid var(--glassborder);color:var(--tx);border-radius:var(--rl);outline:none;transition:all .15s;font-size:12.5px}
+.fld label{display:block;font-size:10.5px;font-weight:600;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:.2px}
+.inp,.sel,.ta{width:100%;padding:8px 11px;background:rgba(255,255,255,.65);backdrop-filter:var(--blur-s);-webkit-backdrop-filter:var(--blur-s);border:1px solid rgba(148,163,184,.3);color:#1e293b;border-radius:var(--rl);outline:none;transition:all .15s;font-size:12.5px}
 .inp:focus,.sel:focus,.ta:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(59,130,246,.1);background:rgba(255,255,255,.7)}
-.inp::placeholder,.ta::placeholder{color:var(--t4)}
+.inp::placeholder,.ta::placeholder{color:#94a3b8}
 .ta{resize:vertical;min-height:60px;font-family:"DM Mono",monospace;font-size:11px;line-height:1.6}
 .sel{cursor:pointer;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23aaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+.sel option{background:#fff;color:#1e293b}
 .r2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 
 /* BUTTONS */
@@ -227,14 +235,14 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 /* MODAL */
 .ov{position:absolute;inset:0;background:rgba(15,23,42,.35);display:none;align-items:center;justify-content:center;z-index:999;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-radius:20px}
 .ov.on{display:flex}
-.modal{background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glassborder);border-radius:var(--rx);width:400px;max-height:580px;overflow-y:auto;box-shadow:var(--shl);animation:pop .22s cubic-bezier(.34,1.56,.64,1)}
+.modal{background:rgba(255,255,255,.82);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border:1px solid var(--glassborder);border-radius:var(--rx);width:400px;max-height:580px;overflow-y:auto;box-shadow:var(--shl);animation:pop .22s cubic-bezier(.34,1.56,.64,1)}
 @keyframes pop{from{opacity:0;transform:scale(.94) translateY(12px)}to{opacity:1;transform:none}}
 .mhd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--b)}
-.mtl{font-size:13.5px;font-weight:700}
+.mtl{font-size:13.5px;font-weight:700;color:#1e293b}
 .mx{width:26px;height:26px;border-radius:var(--rs);border:1px solid var(--glassborder);background:var(--glass3);color:var(--t3);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .mx:hover{background:rgba(248,113,113,.12);color:var(--red);border-color:rgba(248,113,113,.25)}
 .mbd{padding:16px}
-.mft{display:flex;gap:7px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--b);background:var(--glass3);border-radius:0 0 var(--rx) var(--rx)}
+.mft{display:flex;gap:7px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--b);background:rgba(255,255,255,.35);border-radius:0 0 var(--rx) var(--rx)}
 
 /* TOAST */
 .toasts{position:fixed;bottom:12px;right:12px;display:flex;flex-direction:column;gap:5px;z-index:9999;pointer-events:none}
@@ -253,6 +261,45 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 20px;color:var(--t3);text-align:center;gap:8px}
 .ei{font-size:28px;opacity:.3}.et{font-size:12px;font-weight:500}
 .fl{display:flex}.fac{align-items:center}.fjb{justify-content:space-between}.g8{gap:8px}
+
+/* RANDOM DATA */
+.rd-ask{display:flex;align-items:center;gap:8px;padding:10px;background:linear-gradient(135deg,rgba(96,165,250,.08),rgba(167,139,250,.08));border:1px solid rgba(96,165,250,.18);border-radius:var(--rl);margin-bottom:10px}
+.rd-ask-txt{flex:1;font-size:11.5px;font-weight:500;color:var(--t2)}
+.rd-ask-txt span{font-weight:600;color:var(--tx)}
+.rd-yes,.rd-no{padding:4px 14px;border-radius:var(--rf);font-size:11px;font-weight:600;border:none;cursor:pointer;transition:all .15s}
+.rd-yes{background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 2px 6px rgba(59,130,246,.2)}
+.rd-yes:hover{box-shadow:0 3px 10px rgba(59,130,246,.3)}
+.rd-no{background:var(--glass);border:1px solid var(--glassborder);color:var(--t3)}
+.rd-no:hover{background:var(--glass2);color:var(--tx)}
+.rd-applied{display:flex;align-items:center;gap:8px;padding:10px;background:linear-gradient(135deg,rgba(34,197,94,.08),rgba(96,165,250,.08));border:1px solid rgba(34,197,94,.2);border-radius:var(--rl);margin-bottom:10px}
+.rd-applied-info{flex:1;display:flex;align-items:center;gap:6px}
+.rd-edit-btn,.rd-remove-btn{padding:4px 10px;border-radius:var(--rf);font-size:10px;font-weight:600;border:none;cursor:pointer;transition:all .15s}
+.rd-edit-btn{background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 2px 6px rgba(59,130,246,.15)}
+.rd-edit-btn:hover{box-shadow:0 3px 10px rgba(59,130,246,.25)}
+.rd-remove-btn{background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.15)}
+.rd-remove-btn:hover{background:rgba(239,68,68,.18)}
+.rd-types{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:12px}
+.rd-type{padding:10px 4px;border-radius:var(--r);border:1.5px solid var(--glassborder);background:var(--glass);backdrop-filter:var(--blur-s);text-align:center;cursor:pointer;transition:all .15s;user-select:none}
+.rd-type:hover{border-color:rgba(59,130,246,.25);box-shadow:var(--sh);transform:translateY(-1px)}
+.rd-type.on{border-color:var(--brand);background:rgba(59,130,246,.08);box-shadow:0 0 0 2px rgba(59,130,246,.1)}
+.rd-type-ico{font-size:18px;display:block;margin-bottom:3px}
+.rd-type-nm{font-size:10px;font-weight:600;color:#475569}
+.rd-type.on .rd-type-nm{color:var(--brand)}
+.rd-config{padding:12px;background:var(--glass2);border-radius:var(--r);margin-bottom:12px}
+.rd-config-lbl{font-size:10px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.rd-range{display:flex;align-items:center;gap:10px}
+.rd-range input[type=range]{flex:1;accent-color:var(--brand);height:4px}
+.rd-range-val{font-size:13px;font-weight:700;color:var(--brand);min-width:32px;text-align:center;font-family:"DM Mono",monospace}
+.rd-preview{padding:10px 12px;background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--r);font-family:"DM Mono",monospace;font-size:11px;color:#334155;margin-bottom:10px;word-break:break-all;max-height:60px;overflow-y:auto;line-height:1.6}
+.rd-preview-lbl{font-size:9px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.rd-xss-list{display:flex;flex-direction:column;gap:4px;max-height:130px;overflow-y:auto;margin-bottom:10px}
+.rd-xss{padding:7px 10px;background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--rs);font-family:"DM Mono",monospace;font-size:10px;color:var(--red);cursor:pointer;transition:all .12s;word-break:break-all;line-height:1.4}
+.rd-xss:hover{border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)}
+.rd-xss.on{border-color:var(--red);background:rgba(248,113,113,.1)}
+.rd-tag{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:var(--rf);background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(167,139,250,.12));color:var(--brand);letter-spacing:.3px;vertical-align:middle}
+
+/* Zoho integration */
+.zo-rec-name{font-size:12px;font-weight:600;color:#1e293b;padding:6px 10px;background:var(--glass2);border-radius:var(--rs);border:1px solid var(--b)}\n.zo-attach{display:flex;flex-direction:column;gap:6px;margin-top:8px}\n.zo-attach-chk{display:flex;align-items:center;gap:6px;font-size:11px;color:#334155;cursor:pointer}\n.zo-attach-chk input[type=checkbox]{accent-color:var(--brand);width:14px;height:14px}\n.zo-task{background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s}\n.zo-task:hover{border-color:rgba(34,197,94,.3);box-shadow:var(--shm);transform:translateX(2px)}\n.zo-task-name{font-size:12px;font-weight:600;color:#1e293b}\n.zo-task-meta{font-size:10px;color:#64748b;margin-top:2px;display:flex;gap:8px;align-items:center}\n.zo-task-badge{display:inline-flex;padding:1px 6px;border-radius:var(--rf);font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}\n.zo-task-badge.has-steps{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.15)}\n.zo-task-badge.no-steps{background:rgba(156,163,175,.1);color:var(--t3);border:1px solid rgba(156,163,175,.15)}\n.zo-detail{font-size:11.5px;color:#334155;line-height:1.7}\n.zo-detail b{color:#1e293b}\n.zo-detail pre{padding:8px 10px;background:var(--glass2);border-radius:var(--rs);font-size:10px;font-family:'DM Mono',monospace;overflow:auto;max-height:140px;margin:6px 0;border:1px solid var(--b);white-space:pre-wrap;word-break:break-all;color:#334155}
 </style>
 </head>
 <body>
@@ -292,6 +339,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
   <div class="tab" id="t-generate">⚡ Generate</div>
   <div class="tab" id="t-tests">🧪 Tests <span class="tbadge" id="tb-tests">0</span></div>
   <div class="tab" id="t-results">📊 Results <span class="tbadge" id="tb-results">0</span></div>
+  <div class="tab" id="t-zoho">🟢 Zoho</div>
   <div class="tgap"></div>
   <div class="tab-settings" id="t-settings" title="Settings">⚙ Settings</div>
 </div>
@@ -397,6 +445,60 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <button class="btn btn-ghost btn-sm" id="clearResultsBtn">Clear</button>
     </div>
     <div id="resultsWrap"><div class="empty"><div class="ei">📊</div><div class="et">No results yet</div></div></div>
+  </div>
+
+  <!-- ZOHO PROJECTS -->
+  <div class="pg" id="pg-zoho">
+    <div class="scard">
+      <div class="scard-hd"><div class="scard-ico" style="background:linear-gradient(135deg,rgba(34,197,94,.12),rgba(59,130,246,.12))">🔑</div><div><div style="font-size:13px;font-weight:600">Zoho Projects Connection</div><div style="font-size:10.5px;color:var(--t3);margin-top:1px">Connect with OAuth token</div></div></div>
+      <div class="scard-body">
+        <div class="fld"><label>Datacenter</label>
+          <select class="sel" id="zohoDC">
+            <option value=".com">.com (US)</option>
+            <option value=".in">.in (India)</option>
+            <option value=".eu">.eu (Europe)</option>
+            <option value=".com.au">.com.au (Australia)</option>
+            <option value=".jp">.jp (Japan)</option>
+            <option value=".com.cn">.com.cn (China)</option>
+          </select>
+        </div>
+        <div class="fld"><label>OAuth Access Token</label><input class="inp" type="password" id="zohoToken" placeholder="1000.xxxxxxx.xxxxxxx"/></div>
+        <div class="fld"><label>Portal Name / ID</label><input class="inp" id="zohoPortal" placeholder="e.g. mycompany or 12345678"/></div>
+        <div class="fl g8">
+          <button class="btn btn-dark btn-sm" id="saveZohoBtn">Save</button>
+          <button class="btn btn-outline btn-sm" id="testZohoBtn">Test Connection</button>
+        </div>
+        <div id="zohoConnStatus" style="display:none;margin-top:8px;font-size:10.5px;padding:6px 10px;border-radius:var(--rs)"></div>
+      </div>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="sec-lbl" style="margin-bottom:8px">Export Recording to Zoho</div>
+    <div class="scard">
+      <div class="scard-body" style="padding:10px 14px">
+        <div class="fld"><label>Recording</label>
+          <select class="sel" id="zohoExpRec"><option value="">— Select —</option></select>
+        </div>
+        <button class="btn btn-dark btn-full" id="zohoExportBtn" disabled>📤 Export to Zoho Projects</button>
+      </div>
+    </div>
+
+    <!-- IMPORTED / SYNCED -->
+    <div class="sec-lbl" style="margin:12px 0 8px">Import from Zoho</div>
+    <div class="scard">
+      <div class="scard-body" style="padding:10px 14px">
+        <div class="fld"><label>Project</label>
+          <select class="sel" id="ziProject"><option value="">— Select project —</option></select>
+        </div>
+        <div class="fld"><label>Tasklist</label>
+          <select class="sel" id="ziTasklist" disabled><option value="">Select a project first</option></select>
+        </div>
+        <div class="fld"><label>Task</label>
+          <select class="sel" id="ziTask" disabled><option value="">Select a project first</option></select>
+        </div>
+        <button class="btn btn-dark btn-full" id="zohoImportBtn" disabled>📥 View Task &amp; Import</button>
+      </div>
+    </div>
   </div>
 
   <!-- SETTINGS -->
@@ -537,6 +639,16 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       </div>
       <div class="fld"><label>Selector / URL</label><input class="inp" id="seTarget" placeholder="#element or https://..."/></div>
       <div class="fld"><label>Value (for type/assert)</label><input class="inp" id="seValue" placeholder="text to type or assert"/></div>
+      <div id="seRandomAsk" class="rd-ask" style="display:none">
+        <div class="rd-ask-txt">🎲 <span>Use random data?</span></div>
+        <button class="rd-yes" id="seRandomYes">Yes</button>
+        <button class="rd-no" id="seRandomNo">No</button>
+      </div>
+      <div id="seRandomApplied" class="rd-applied" style="display:none">
+        <div class="rd-applied-info"><span class="rd-tag" id="rdAppliedTag"></span></div>
+        <button class="rd-edit-btn" id="seRandomEdit">✏️ Edit</button>
+        <button class="rd-remove-btn" id="seRandomRemove">✕ Remove</button>
+      </div>
     </div>
     <div class="mft">
       <button class="btn btn-ghost btn-sm" id="cancelStepEditBtn">Cancel</button>
@@ -546,6 +658,92 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 </div>
 
 <div class="toasts" id="toasts"></div>
+
+<!-- RANDOM DATA MODAL -->
+<div class="ov" id="randomModal">
+  <div class="modal" style="width:380px">
+    <div class="mhd"><span class="mtl">🎲 Random Data Generator</span><button class="mx" id="closeRandomModal">✕</button></div>
+    <div class="mbd">
+      <div class="sec-lbl" style="margin-bottom:8px">Data Type</div>
+      <div class="rd-types">
+        <div class="rd-type on" data-rtype="string"><span class="rd-type-ico">🔤</span><div class="rd-type-nm">String</div></div>
+        <div class="rd-type" data-rtype="number"><span class="rd-type-ico">🔢</span><div class="rd-type-nm">Number</div></div>
+        <div class="rd-type" data-rtype="email"><span class="rd-type-ico">📧</span><div class="rd-type-nm">Email</div></div>
+        <div class="rd-type" data-rtype="paragraph"><span class="rd-type-ico">📝</span><div class="rd-type-nm">Paragraph</div></div>
+        <div class="rd-type" data-rtype="xss"><span class="rd-type-ico">🛡</span><div class="rd-type-nm">XSS</div></div>
+      </div>
+      <div id="rdConfigWrap">
+        <div id="rdLenConfig" class="rd-config">
+          <div class="rd-config-lbl">Character Length</div>
+          <div class="rd-range">
+            <input type="range" id="rdLenSlider" min="3" max="200" value="10"/>
+            <span class="rd-range-val" id="rdLenVal">10</span>
+          </div>
+        </div>
+        <div id="rdEmailConfig" class="rd-config" style="display:none">
+          <div class="rd-config-lbl">Email Format</div>
+          <div style="font-size:12px;color:var(--t2);font-family:'DM Mono',monospace;padding:6px 0">&lt;random&gt;@zohotest.com</div>
+        </div>
+        <div id="rdXssConfig" style="display:none">
+          <div class="rd-config-lbl" style="margin-bottom:6px">Select XSS Payload</div>
+          <div class="rd-xss-list" id="rdXssList"></div>
+        </div>
+      </div>
+      <div class="rd-preview-lbl">Preview</div>
+      <div class="rd-preview" id="rdPreview">abcdefghij</div>
+    </div>
+    <div class="mft">
+      <button class="btn btn-ghost btn-sm" id="cancelRandomBtn">Cancel</button>
+      <button class="btn btn-dark btn-sm" id="applyRandomBtn">✓ Apply</button>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ZOHO EXPORT MODAL -->
+<div class="ov" id="zohoExportModal">
+  <div class="modal">
+    <div class="mhd"><span class="mtl">📤 Export to Zoho Projects</span><button class="mx" id="closeZohoExportModal">✕</button></div>
+    <div class="mbd">
+      <div class="fld"><label>Recording</label><div class="zo-rec-name" id="zeRecName">—</div></div>
+      <div class="fld"><label>Project</label>
+        <select class="sel" id="zeProject"><option value="">Loading projects…</option></select>
+      </div>
+      <div class="fld"><label>Tasklist</label>
+        <select class="sel" id="zeTasklist" disabled><option value="">Select a project first</option></select>
+      </div>
+      <div class="fld"><label>Task Name</label><input class="inp" id="zeTaskName" placeholder="Auto-filled from recording"/></div>
+      <div class="fld"><label>Description</label><textarea class="inp" id="zeTaskDesc" rows="3" placeholder="Test steps and metadata…" style="resize:vertical;font-family:inherit;min-height:54px"></textarea></div>
+      <div class="zo-attach">
+        <label class="zo-attach-chk"><input type="checkbox" id="zeAttachSteps" checked/> Attach steps JSON</label>
+        <label class="zo-attach-chk"><input type="checkbox" id="zeAttachCode" checked/> Attach generated test code</label>
+      </div>
+      <div id="zeStatus" style="display:none;margin-top:6px;font-size:10.5px;padding:6px 10px;border-radius:var(--rs)"></div>
+    </div>
+    <div class="mft">
+      <button class="btn btn-ghost btn-sm" id="cancelZohoExportBtn">Cancel</button>
+      <button class="btn btn-dark btn-sm" id="doZohoExportBtn">📤 Export</button>
+    </div>
+  </div>
+</div>
+
+<!-- ZOHO IMPORT DETAIL MODAL -->
+<div class="ov" id="zohoImportModal">
+  <div class="modal">
+    <div class="mhd"><span class="mtl" id="ziTitle">Import Task</span><button class="mx" id="closeZohoImportModal">✕</button></div>
+    <div class="mbd">
+      <div class="zo-detail" id="ziDetail"></div>
+      <div id="ziAttachInfo" style="margin-top:10px;font-size:11px;color:var(--t3)"></div>
+      <div id="ziImportStatus" style="display:none;margin-top:8px;font-size:10.5px;padding:6px 10px;border-radius:var(--rs)"></div>
+    </div>
+    <div class="mft">
+      <button class="btn btn-ghost btn-sm" id="cancelZohoImportBtn">Cancel</button>
+      <button class="btn btn-outline btn-sm" id="ziRunBtn">▶ Run Test</button>
+      <button class="btn btn-dark btn-sm" id="ziImportBtn">📥 Import to Library</button>
+    </div>
+  </div>
+</div>
 
 </div><!-- /app-frame -->
 
