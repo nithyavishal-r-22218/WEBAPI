@@ -1491,10 +1491,10 @@ function applyRandomData() {
 // ═══════════════════════════════════════════════════
 
 function getZohoCreds() {
-  // Use first portal as default
+  // Use first portal as default; prefer portalId over name (names can have spaces which Zoho rejects)
   const portals = G.settings.zpPortals || [];
   const firstPortal = portals[0] || {};
-  return { token: G.settings.zohoToken, portal: firstPortal.name || G.settings.zohoPortal || '', dc: G.settings.zohoDC || '.com', clientId: G.settings.zpClientId, clientSecret: G.settings.zpClientSecret, portalId: firstPortal.id || G.settings.zpPortalId || '' };
+  return { token: G.settings.zohoToken, portal: firstPortal.id || firstPortal.name || G.settings.zpPortalId || G.settings.zohoPortal || '', dc: G.settings.zohoDC || '.com', clientId: G.settings.zpClientId, clientSecret: G.settings.zpClientSecret, portalId: firstPortal.id || G.settings.zpPortalId || '' };
 }
 
 async function saveZohoSettings() {
@@ -1733,7 +1733,7 @@ async function openZohoExportModal() {
   const r = await bg('ZOHO_PROJECTS', { token, portal, dc });
   if (r?.ok) {
     $('zeProject').innerHTML = '<option value="">— Select project —</option>'
-      + (r.projects || []).map(p => '<option value="' + p.id_string + '">' + escHtml(p.name) + '</option>').join('');
+      + (r.projects || []).map(p => '<option value="' + (p.id || p.id_string) + '">' + escHtml(p.name) + '</option>').join('');
   } else {
     $('zeProject').innerHTML = '<option value="">Failed to load projects</option>';
     toast('✗ ' + (r?.error || 'Could not load projects'), 'fail');
@@ -1754,7 +1754,7 @@ async function onZeProjectChange() {
   const r = await bg('ZOHO_TASKLISTS', { token, portal, dc, projectId });
   if (r?.ok) {
     tl.innerHTML = '<option value="">(No tasklist / default)</option>'
-      + (r.tasklists || []).map(t => '<option value="' + t.id_string + '">' + escHtml(t.name) + '</option>').join('');
+      + (r.tasklists || []).map(t => '<option value="' + (t.id || t.id_string) + '">' + escHtml(t.name) + '</option>').join('');
     tl.disabled = false;
   } else {
     tl.innerHTML = '<option value="">Failed to load</option>';
@@ -1828,7 +1828,7 @@ async function loadZiProjects() {
   const r = await bg('ZOHO_PROJECTS', { token, portal, dc });
   if (r?.ok) {
     sel.innerHTML = '<option value="">— Select project —</option>'
-      + (r.projects || []).map(p => '<option value="' + p.id_string + '">' + escHtml(p.name) + '</option>').join('');
+      + (r.projects || []).map(p => '<option value="' + (p.id || p.id_string) + '">' + escHtml(p.name) + '</option>').join('');
   } else {
     sel.innerHTML = '<option value="">Failed to load</option>';
   }
@@ -1854,7 +1854,7 @@ async function onZiProjectChange() {
   const r = await bg('ZOHO_TASKLISTS', { token, portal, dc, projectId });
   if (r?.ok) {
     tl.innerHTML = '<option value="_all">All tasks (no filter)</option>'
-      + (r.tasklists || []).map(t => '<option value="' + t.id_string + '">' + escHtml(t.name) + '</option>').join('');
+      + (r.tasklists || []).map(t => '<option value="' + (t.id || t.id_string) + '">' + escHtml(t.name) + '</option>').join('');
     tl.disabled = false;
   } else {
     tl.innerHTML = '<option value="">Failed to load</option>';
@@ -1882,7 +1882,7 @@ async function loadZiTasks(projectId, tasklistId) {
     // Filter by tasklist if specified
     if (tasklistId) {
       tasks = tasks.filter(t => {
-        const tlId = t.tasklist?.id_string || t.tasklist_id;
+        const tlId = t.tasklist?.id || t.tasklist?.id_string || t.tasklist_id;
         return tlId === tasklistId;
       });
     }

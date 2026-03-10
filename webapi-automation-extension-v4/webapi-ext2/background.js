@@ -530,6 +530,7 @@ function injectRecorder() {
     if (!el || el === document || el === document.documentElement || el === document.body) return;
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
+    if (el.closest('#' + RANDOM_POPUP_ID)) return;
     if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
     // Only watch meaningful elements (not tiny text nodes)
     if (['SPAN','A','BUTTON','LI','DIV','TD','TH','TR','IMG','SVG','LABEL','SUMMARY'].indexOf(el.tagName) === -1
@@ -569,6 +570,7 @@ function injectRecorder() {
     if (el === document.body && el.getAttribute('contenteditable') !== 'true') { if (window.__WEBAPI_API) window.__WEBAPI_API.hideHighlight(); return; }
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
+    if (el.closest('#' + RANDOM_POPUP_ID)) return;
     if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
     if (window.__WEBAPI_API) window.__WEBAPI_API.updateHighlight(el);
   }, true);
@@ -578,6 +580,7 @@ function injectRecorder() {
     const el = e.target;
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
+    if (el.closest('#' + RANDOM_POPUP_ID)) return;
     if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
 
     const api = window.__WEBAPI_API;
@@ -616,6 +619,7 @@ function injectRecorder() {
     const el = e.target;
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
+    if (el.closest('#' + RANDOM_POPUP_ID)) return;
     if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
 
     const api = window.__WEBAPI_API;
@@ -658,12 +662,150 @@ function injectRecorder() {
     return null;
   }
 
+  // ── Random data prompt during recording ──────────────────────────────────────
+  const RANDOM_POPUP_ID = '__webapi_random_popup';
+  let randomPopup = null;
+  let randomAutoTimer = null;
+  function removeRandomPopup() {
+    clearTimeout(randomAutoTimer);
+    if (randomPopup) { randomPopup.remove(); randomPopup = null; }
+  }
+  function positionNearEl(popup, el) {
+    const r = el.getBoundingClientRect();
+    const gap = 8;
+    // Try below the element first
+    let top = r.bottom + gap;
+    let left = r.left;
+    // If it would go off-screen bottom, place above
+    if (top + 260 > window.innerHeight) top = Math.max(gap, r.top - 260 - gap);
+    // Keep within horizontal bounds
+    if (left + 320 > window.innerWidth) left = Math.max(gap, window.innerWidth - 330);
+    if (left < gap) left = gap;
+    popup.style.position = 'fixed';
+    popup.style.top = top + 'px';
+    popup.style.left = left + 'px';
+    popup.style.bottom = 'auto';
+    popup.style.right = 'auto';
+  }
+  function showRandomPrompt(step, el) {
+    removeRandomPopup();
+    randomPopup = document.createElement('div');
+    randomPopup.id = RANDOM_POPUP_ID;
+    const fieldLabel = step.text || step.target;
+    const shortLabel = fieldLabel.length > 40 ? fieldLabel.slice(0, 37) + '...' : fieldLabel;
+    const btnStyle = 'border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#fff;padding:6px 8px;border-radius:8px;font:600 11px -apple-system,sans-serif;cursor:pointer;text-align:center;transition:background .12s';
+    randomPopup.style.cssText = 'z-index:2147483647;background:linear-gradient(135deg,#0f172a,#1e3a5f);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:14px 18px;font:500 12px/1.5 -apple-system,system-ui,sans-serif;color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.4);max-width:320px;min-width:240px;';
+    randomPopup.innerHTML =
+      '<div id="__wb_rd_step1">'
+      + '<div style="margin-bottom:8px;font-weight:700;font-size:13px">🎲 Use random data?</div>'
+      + '<div style="color:#94a3b8;font-size:11px;margin-bottom:10px">Field: <b>' + shortLabel.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</b></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'
+      + '<button class="__wb_rd_btn" data-type="string" style="' + btnStyle + '">🔤 String</button>'
+      + '<button class="__wb_rd_btn" data-type="number" style="' + btnStyle + '">🔢 Number</button>'
+      + '<button class="__wb_rd_btn" data-type="email" style="' + btnStyle + '">📧 Email</button>'
+      + '<button class="__wb_rd_btn" data-type="paragraph" style="' + btnStyle + '">📝 Paragraph</button>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button id="__wb_rd_no" style="border:1px solid rgba(255,255,255,.2);background:none;color:#94a3b8;padding:5px 14px;border-radius:6px;font:600 11px -apple-system,sans-serif;cursor:pointer">No, use typed value</button>'
+      + '</div>'
+      + '</div>'
+      + '<div id="__wb_rd_step2" style="display:none">'
+      + '<div style="margin-bottom:8px;font-weight:700;font-size:13px">📏 Set length</div>'
+      + '<div style="color:#94a3b8;font-size:11px;margin-bottom:8px">Type: <b id="__wb_rd_type_label"></b></div>'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+      + '<input id="__wb_rd_range" type="range" min="1" max="200" value="10" style="flex:1;accent-color:#2563eb;cursor:pointer">'
+      + '<input id="__wb_rd_len" type="number" min="1" max="500" value="10" style="width:52px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:4px 6px;font:600 12px -apple-system,sans-serif;text-align:center">'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button id="__wb_rd_back" style="border:1px solid rgba(255,255,255,.2);background:none;color:#94a3b8;padding:5px 14px;border-radius:6px;font:600 11px -apple-system,sans-serif;cursor:pointer">← Back</button>'
+      + '<button id="__wb_rd_apply" style="border:none;background:#2563eb;color:#fff;padding:5px 14px;border-radius:6px;font:600 11px -apple-system,sans-serif;cursor:pointer">Apply</button>'
+      + '</div>'
+      + '</div>';
+    document.documentElement.appendChild(randomPopup);
+    positionNearEl(randomPopup, el);
+
+    let chosenType = '';
+    const defaults = { string: 10, number: 5, paragraph: 100 };
+    const maxVals = { string: 100, number: 20, paragraph: 500 };
+    const labels = { string: '🔤 String', number: '🔢 Number', paragraph: '📝 Paragraph' };
+
+    // Hover effects on type buttons
+    randomPopup.querySelectorAll('.__wb_rd_btn').forEach(btn => {
+      btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(37,99,235,.5)'; btn.style.borderColor = '#2563eb'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(255,255,255,.06)'; btn.style.borderColor = 'rgba(255,255,255,.15)'; });
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation(); ev.preventDefault();
+        chosenType = btn.dataset.type;
+        if (chosenType === 'email') {
+          // Email has no length — apply directly
+          step.value = '{{random:email}}';
+          send(step);
+          removeRandomPopup();
+          return;
+        }
+        // Show step 2 — length picker
+        const step1 = randomPopup.querySelector('#__wb_rd_step1');
+        const step2 = randomPopup.querySelector('#__wb_rd_step2');
+        step1.style.display = 'none';
+        step2.style.display = 'block';
+        randomPopup.querySelector('#__wb_rd_type_label').textContent = labels[chosenType] || chosenType;
+        const rangeEl = randomPopup.querySelector('#__wb_rd_range');
+        const lenEl = randomPopup.querySelector('#__wb_rd_len');
+        const defLen = defaults[chosenType] || 10;
+        rangeEl.max = maxVals[chosenType] || 200;
+        rangeEl.value = defLen;
+        lenEl.value = defLen;
+        // Sync range ↔ number
+        rangeEl.addEventListener('input', () => { lenEl.value = rangeEl.value; });
+        lenEl.addEventListener('input', () => { rangeEl.value = lenEl.value; });
+        // Reset auto-dismiss timer for step 2
+        clearTimeout(randomAutoTimer);
+        randomAutoTimer = setTimeout(() => { if (randomPopup) { send(step); removeRandomPopup(); } }, 15000);
+      });
+    });
+
+    // "No, use typed value"
+    randomPopup.querySelector('#__wb_rd_no').addEventListener('click', ev => {
+      ev.stopPropagation(); ev.preventDefault();
+      send(step);
+      removeRandomPopup();
+    });
+
+    // Back button
+    randomPopup.querySelector('#__wb_rd_back').addEventListener('click', ev => {
+      ev.stopPropagation(); ev.preventDefault();
+      randomPopup.querySelector('#__wb_rd_step1').style.display = 'block';
+      randomPopup.querySelector('#__wb_rd_step2').style.display = 'none';
+      clearTimeout(randomAutoTimer);
+      randomAutoTimer = setTimeout(() => { if (randomPopup) { send(step); removeRandomPopup(); } }, 8000);
+    });
+
+    // Apply button
+    randomPopup.querySelector('#__wb_rd_apply').addEventListener('click', ev => {
+      ev.stopPropagation(); ev.preventDefault();
+      const len = parseInt(randomPopup.querySelector('#__wb_rd_len').value, 10) || defaults[chosenType] || 10;
+      step.value = '{{random:' + chosenType + ':' + len + '}}';
+      send(step);
+      removeRandomPopup();
+    });
+
+    // Auto-dismiss after 8s — use typed value
+    randomAutoTimer = setTimeout(() => {
+      if (randomPopup) {
+        send(step);
+        removeRandomPopup();
+      }
+    }, 8000);
+  }
+
   // ── Type (debounced, captures final value only) ──────────────────────────────
   const inputMap = new WeakMap();
   document.addEventListener('input', e => {
     if (!window.__WEBAPI_REC__) return;
     if (window.__WEBAPI_INSPECTING__) return;
+    if (randomPopup) return; // suppress input while random prompt is open
     const el = e.target;
+    if (el.closest('#' + RANDOM_POPUP_ID)) return;
 
     // Handle contenteditable elements (rich text editors like <body contenteditable>)
     const editableRoot = getEditableRoot(el);
@@ -674,10 +816,11 @@ function injectRecorder() {
         const api = window.__WEBAPI_API;
         const tgt = api ? (api.getAllLocators(editableRoot)[0]?.value || sel(editableRoot)) : sel(editableRoot);
         const content = editableRoot.innerText || editableRoot.textContent || '';
-        send({ action:'type', target:tgt, tagName:editableRoot.tagName.toLowerCase(),
+        const step = { action:'type', target:tgt, tagName:editableRoot.tagName.toLowerCase(),
           text:editableRoot.getAttribute('aria-label') || editableRoot.className || 'contenteditable',
           value:content.trim().slice(0, 500), url:location.href, t:Date.now(),
-          contenteditable:true });
+          contenteditable:true };
+        showRandomPrompt(step, editableRoot);
       }, 800));
       return;
     }
@@ -688,10 +831,16 @@ function injectRecorder() {
       lastActionKey = '';
       const api = window.__WEBAPI_API;
       const tgt = api ? (api.getAllLocators(el)[0]?.value || sel(el)) : sel(el);
-      send({ action: el.tagName==='SELECT' ? 'select' : 'type',
-        target:tgt, tagName:el.tagName.toLowerCase(),
-        text:el.placeholder||el.name||el.ariaLabel||'',
-        value:el.value, url:location.href, t:Date.now() });
+      if (el.tagName === 'SELECT') {
+        send({ action:'select', target:tgt, tagName:el.tagName.toLowerCase(),
+          text:el.placeholder||el.name||el.ariaLabel||'',
+          value:el.value, url:location.href, t:Date.now() });
+      } else {
+        const step = { action:'type', target:tgt, tagName:el.tagName.toLowerCase(),
+          text:el.placeholder||el.name||el.ariaLabel||'',
+          value:el.value, url:location.href, t:Date.now() };
+        showRandomPrompt(step, el);
+      }
     }, 600));
   }, true);
 
@@ -701,6 +850,7 @@ function injectRecorder() {
     if (window.__WEBAPI_INSPECTING__) return;
     const el = e.target;
     if (el.closest('#' + PILL_ID)) return;
+    if (el.closest('#' + RANDOM_POPUP_ID)) return;
     const text = (el.innerText || '').trim().slice(0, 80);
     if (!text) return;
     lastActionKey = '';
@@ -720,6 +870,7 @@ function injectRecorder() {
     if (!window.__WEBAPI_REC__) return;
     if (window.__WEBAPI_INSPECTING__) return;
     if (e.target.closest('#' + PILL_ID)) return;
+    if (e.target.closest('#' + RANDOM_POPUP_ID)) return;
 
     const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
     const isNavKey = NAV_KEYS.has(e.key);
@@ -1744,15 +1895,51 @@ async function healthCheck(url, key) {
 /* ══════════════════════════════════════════════════
    ZOHO PROJECTS INTEGRATION
    ══════════════════════════════════════════════════ */
-const ZOHO_API = 'https://projectsapi.zoho.com/restapi';
 
 function zohoBase(dc) {
-  return 'https://projects.zoho' + (dc || '.com') + '/restapi';
+  return 'https://projectsapi.zoho' + (dc || '.com') + '/api/v3';
+}
+
+// OAuth token exchange — uses Client ID + Secret + Refresh Token to get access token
+let _zohoAccessToken = null;
+let _zohoTokenExpiry = 0;
+
+async function zohoGetAccessToken(refreshToken, dc) {
+  // Return cached token if still valid (with 60s buffer)
+  if (_zohoAccessToken && Date.now() < _zohoTokenExpiry - 60000) {
+    return _zohoAccessToken;
+  }
+  const d = await chrome.storage.local.get('settings');
+  const cfg = d.settings || {};
+  if (!cfg.zpClientId || !cfg.zpClientSecret) {
+    return refreshToken; // no client creds configured, use token as-is
+  }
+  const base = 'https://accounts.zoho' + (dc || '.com');
+  const params = new URLSearchParams({
+    refresh_token: refreshToken,
+    client_id: cfg.zpClientId,
+    client_secret: cfg.zpClientSecret,
+    grant_type: 'refresh_token'
+  });
+  const r = await fetch(base + '/oauth/v2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+    signal: AbortSignal.timeout(15000)
+  });
+  const data = await r.json();
+  if (data.error) {
+    throw new Error('OAuth token exchange failed: ' + data.error);
+  }
+  _zohoAccessToken = data.access_token;
+  _zohoTokenExpiry = Date.now() + (data.expires_in || 3600) * 1000;
+  return _zohoAccessToken;
 }
 
 async function zohoFetch(token, path, opts = {}, dc) {
+  const accessToken = await zohoGetAccessToken(token, dc);
   const url = zohoBase(dc) + path;
-  const headers = { 'Authorization': 'Zoho-oauthtoken ' + token, ...opts.headers };
+  const headers = { 'Authorization': 'Zoho-oauthtoken ' + accessToken, ...opts.headers };
   const r = await fetch(url, { ...opts, headers, signal: AbortSignal.timeout(15000) });
   if (!r.ok) {
     const text = await r.text().catch(() => '');
@@ -1763,8 +1950,9 @@ async function zohoFetch(token, path, opts = {}, dc) {
 
 async function zohoTest(token, portal, dc) {
   try {
-    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/', { method: 'GET' }, dc);
-    return { ok: true, count: (d.projects || []).length };
+    const d = await zohoFetch(token, '/portal/' + portal + '/projects', { method: 'GET' }, dc);
+    const projects = Array.isArray(d) ? d : (d.projects || []);
+    return { ok: true, count: projects.length };
   } catch(e) {
     return { ok: false, error: e.message };
   }
@@ -1772,8 +1960,9 @@ async function zohoTest(token, portal, dc) {
 
 async function zohoGetProjects(token, portal, dc) {
   try {
-    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/?range=100', {}, dc);
-    return { ok: true, projects: d.projects || [] };
+    const d = await zohoFetch(token, '/portal/' + portal + '/projects?page=1&per_page=100', {}, dc);
+    const projects = Array.isArray(d) ? d : (d.projects || []);
+    return { ok: true, projects };
   } catch(e) {
     return { ok: false, error: e.message };
   }
@@ -1781,8 +1970,9 @@ async function zohoGetProjects(token, portal, dc) {
 
 async function zohoGetTasklists(token, portal, projectId, dc) {
   try {
-    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasklists/', {}, dc);
-    return { ok: true, tasklists: d.tasklists || [] };
+    const d = await zohoFetch(token, '/portal/' + portal + '/projects/' + projectId + '/tasklists?page=1&per_page=100', {}, dc);
+    const tasklists = Array.isArray(d) ? d : (d.tasklists || []);
+    return { ok: true, tasklists };
   } catch(e) {
     return { ok: false, error: e.message };
   }
@@ -1790,8 +1980,9 @@ async function zohoGetTasklists(token, portal, projectId, dc) {
 
 async function zohoGetTasks(token, portal, projectId, dc) {
   try {
-    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/?range=100', {}, dc);
-    return { ok: true, tasks: d.tasks || [] };
+    const d = await zohoFetch(token, '/portal/' + portal + '/projects/' + projectId + '/tasks?page=1&per_page=100', {}, dc);
+    const tasks = Array.isArray(d) ? d : (d.tasks || []);
+    return { ok: true, tasks };
   } catch(e) {
     return { ok: false, error: e.message };
   }
@@ -1799,15 +1990,16 @@ async function zohoGetTasks(token, portal, projectId, dc) {
 
 async function zohoGetAllTasks(token, portal, dc) {
   try {
-    const projData = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/?range=100', {}, dc);
-    const projects = projData.projects || [];
+    const projData = await zohoFetch(token, '/portal/' + portal + '/projects?page=1&per_page=100', {}, dc);
+    const projects = Array.isArray(projData) ? projData : (projData.projects || []);
     const allTasks = [];
     for (const p of projects.slice(0, 10)) {
       try {
-        const td = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + p.id_string + '/tasks/?range=50', {}, dc);
-        (td.tasks || []).forEach(t => {
+        const td = await zohoFetch(token, '/portal/' + portal + '/projects/' + (p.id || p.id_string) + '/tasks?page=1&per_page=50', {}, dc);
+        const tasks = Array.isArray(td) ? td : (td.tasks || []);
+        tasks.forEach(t => {
           t._projectName = p.name;
-          t._projectId = p.id_string;
+          t._projectId = p.id || p.id_string;
           allTasks.push(t);
         });
       } catch(e) { /* skip errored projects */ }
@@ -1820,7 +2012,7 @@ async function zohoGetAllTasks(token, portal, dc) {
 
 async function zohoGetTaskDetail(token, portal, projectId, taskId, dc) {
   try {
-    const d = await zohoFetch(token, '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/', {}, dc);
+    const d = await zohoFetch(token, '/portal/' + portal + '/projects/' + projectId + '/tasks/' + taskId, {}, dc);
     return { ok: true, task: d.tasks ? d.tasks[0] : d };
   } catch(e) {
     return { ok: false, error: e.message };
@@ -1828,64 +2020,99 @@ async function zohoGetTaskDetail(token, portal, projectId, taskId, dc) {
 }
 
 async function zohoExportTask(msg) {
-  const { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename } = msg;
+  const { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename, _existingTaskId } = msg;
   try {
-    const form = new URLSearchParams();
-    form.append('name', taskName);
-    if (taskDesc) form.append('description', taskDesc);
-    if (tasklistId) form.append('tasklist_id', tasklistId);
-
+    const accessToken = await zohoGetAccessToken(token, dc);
     const base = zohoBase(dc);
-    const taskResp = await zohoFetch(token,
-      '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/',
-      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() }, dc
-    );
-    const task = taskResp.tasks ? taskResp.tasks[0] || taskResp.tasks : taskResp;
-    const taskId = task.id_string || task.id;
+    let taskId = _existingTaskId;
+    let task = {};
+
+    if (!taskId) {
+      const taskBody = { name: taskName };
+      if (taskDesc) taskBody.description = taskDesc;
+      if (tasklistId) taskBody.tasklist = { id: tasklistId };
+      const taskResp = await zohoFetch(token,
+        '/portal/' + portal + '/projects/' + projectId + '/tasks',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskBody) }, dc
+      );
+      task = taskResp.tasks ? taskResp.tasks[0] || taskResp.tasks : taskResp;
+      taskId = task.id || task.id_string;
+    }
+
+    // Step 1: Upload file to portal, Step 2: Associate with task
+    async function uploadAndAttach(blob, filename) {
+      // Step 1: Upload to portal-level attachments
+      const fd = new FormData();
+      fd.append('upload_file', blob, filename);
+      const uploadUrl = base + '/portal/' + portal + '/attachments';
+      console.log('[ZOHO] Step 1 - Uploading to portal:', uploadUrl);
+      const ar = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
+        body: fd,
+        signal: AbortSignal.timeout(15000)
+      });
+      const arData = await ar.json().catch(() => ({}));
+      console.log('[ZOHO] Upload response:', ar.status, JSON.stringify(arData).slice(0, 500));
+      if (!ar.ok) return { name: filename, ok: false, err: 'Upload failed (' + ar.status + ')' };
+
+      // Extract attachment ID — v3 returns { attachment: [{ attachment_id: "..." }] }
+      const attachList = arData.attachment || arData.attachments || [];
+      const firstAttach = Array.isArray(attachList) ? attachList[0] : attachList;
+      const attachId = (firstAttach && (firstAttach.attachment_id || firstAttach.id))
+        || arData.attachment_id || arData.id
+        || (Array.isArray(arData) && arData[0]?.attachment_id);
+      if (!attachId) {
+        console.log('[ZOHO] Could not extract attachment ID from:', JSON.stringify(arData).slice(0, 500));
+        return { name: filename, ok: false, err: 'No attachment ID in response' };
+      }
+      console.log('[ZOHO] Extracted attachment ID:', attachId);
+
+      // Step 2: Associate attachment with the task
+      const assocUrl = base + '/portal/' + portal + '/projects/' + projectId + '/attachments/' + attachId;
+      console.log('[ZOHO] Step 2 - Associating attachment', attachId, 'with task', taskId, ':', assocUrl);
+      const assocFd = new FormData();
+      assocFd.append('entity_type', 'task');
+      assocFd.append('entity_id', String(taskId));
+      const assocR = await fetch(assocUrl, {
+        method: 'POST',
+        headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
+        body: assocFd,
+        signal: AbortSignal.timeout(15000)
+      });
+      const assocData = await assocR.json().catch(() => ({}));
+      console.log('[ZOHO] Associate response:', assocR.status, JSON.stringify(assocData).slice(0, 500));
+      if (!assocR.ok) return { name: filename, ok: false, err: 'Associate failed (' + assocR.status + ')' };
+      return { name: filename, ok: true };
+    }
 
     const attachResults = [];
     if (stepsJson) {
       try {
         const blob = new Blob([stepsJson], { type: 'application/json' });
-        const fd = new FormData();
-        fd.append('uploaddoc', blob, 'steps.json');
-        const aUrl = base + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
-        const ar = await fetch(aUrl, {
-          method: 'POST',
-          headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
-          body: fd,
-          signal: AbortSignal.timeout(15000)
-        });
-        attachResults.push({ name: 'steps.json', ok: ar.ok });
+        const result = await uploadAndAttach(blob, 'steps.json');
+        attachResults.push(result);
       } catch(e) { attachResults.push({ name: 'steps.json', ok: false, err: e.message }); }
     }
 
     if (codeText) {
       try {
+        const fname = codeFilename || 'test.js';
         const blob = new Blob([codeText], { type: 'text/plain' });
-        const fd = new FormData();
-        fd.append('uploaddoc', blob, codeFilename || 'test.js');
-        const aUrl = base + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
-        const ar = await fetch(aUrl, {
-          method: 'POST',
-          headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
-          body: fd,
-          signal: AbortSignal.timeout(15000)
-        });
-        attachResults.push({ name: codeFilename || 'test.js', ok: ar.ok });
+        const result = await uploadAndAttach(blob, fname);
+        attachResults.push(result);
       } catch(e) { attachResults.push({ name: codeFilename, ok: false, err: e.message }); }
     }
 
     // Also store steps JSON as a task comment (reliable retrieval on import)
     if (stepsJson) {
       try {
-        const commentBody = new URLSearchParams();
         const b64 = btoa(unescape(encodeURIComponent(stepsJson)));
-        commentBody.append('content', '⚙️ WebAPI Automation Steps (auto-generated — do not edit)\n\n[WEBAPI_STEPS_B64]' + b64 + '[WEBAPI_STEPS_B64_END]');
-        const cr = await fetch(base + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/comments/', {
+        const commentPayload = JSON.stringify({ comment: '⚙️ WebAPI Automation Steps (auto-generated — do not edit)\n\n[WEBAPI_STEPS_B64]' + b64 + '[WEBAPI_STEPS_B64_END]' });
+        const cr = await fetch(base + '/portal/' + portal + '/projects/' + projectId + '/tasks/' + taskId + '/comments', {
           method: 'POST',
-          headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: commentBody.toString(),
+          headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken, 'Content-Type': 'application/json' },
+          body: commentPayload,
           signal: AbortSignal.timeout(15000)
         });
         const crd = await cr.json().catch(() => ({}));
@@ -1900,17 +2127,16 @@ async function zohoExportTask(msg) {
 }
 
 async function zohoGetAttachments(token, portal, projectId, taskId, dc) {
-  // Try v3 API on both possible hosts
+  const accessToken = await zohoGetAccessToken(token, dc);
   const hosts = [
-    'https://projectsapi.zoho' + (dc || '.com'),
-    'https://projects.zoho' + (dc || '.com')
+    'https://projectsapi.zoho' + (dc || '.com')
   ];
   for (const base of hosts) {
     try {
-      const url = base + '/api/v3/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/attachments?entity_type=task&entity_id=' + taskId;
+      const url = base + '/api/v3/portal/' + portal + '/projects/' + projectId + '/attachments?entity_type=task&entity_id=' + taskId;
       console.log('[ZOHO] Trying attachments URL:', url);
       const r = await fetch(url, {
-        headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+        headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
         signal: AbortSignal.timeout(15000)
       });
       console.log('[ZOHO] Attachments response status:', r.status);
@@ -1922,28 +2148,13 @@ async function zohoGetAttachments(token, portal, projectId, taskId, dc) {
       if (list.length || d.attachment) return { ok: true, attachments: list };
     } catch(e) { console.log('[ZOHO] Attachments error:', e.message); }
   }
-  // Fallback: try v1 REST API
-  try {
-    const url = zohoBase(dc) + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
-    console.log('[ZOHO] Trying v1 attachments URL:', url);
-    const r = await fetch(url, {
-      headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
-      signal: AbortSignal.timeout(15000)
-    });
-    const d = await r.json().catch(() => ({}));
-    console.log('[ZOHO] v1 attachments response:', JSON.stringify(d).slice(0, 500));
-    const list = d.attachment || d.attachments || d.files || d.documents || [];
-    return { ok: r.ok, attachments: list, error: r.ok ? undefined : 'HTTP ' + r.status };
-  } catch(e) {
-    return { ok: false, error: e.message, attachments: [] };
-  }
+  return { ok: false, error: 'No attachments found', attachments: [] };
 }
 
 async function zohoDownloadAttachment(token, portal, projectId, taskId, attachId, dc, downloadUrl, fileId) {
+  const accessToken = await zohoGetAccessToken(token, dc);
   console.log('[ZOHO] Download attachment - attachId:', attachId, 'taskId:', taskId, 'projectId:', projectId, 'fileId:', fileId);
-  const ep = encodeURIComponent(portal);
   const h1 = 'https://projectsapi.zoho' + (dc || '.com');
-  const h2 = 'https://projects.zoho' + (dc || '.com');
   const urls = [];
   // WorkDrive API v1 — direct file download using third_party_file_id
   if (fileId) {
@@ -1952,21 +2163,17 @@ async function zohoDownloadAttachment(token, portal, projectId, taskId, attachId
   }
   // Documents API v3
   if (fileId) {
-    urls.push(h1 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/documents/' + fileId + '?action=download');
-    urls.push(h2 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/documents/' + fileId + '?action=download');
+    urls.push(h1 + '/api/v3/portal/' + portal + '/projects/' + projectId + '/documents/' + fileId + '?action=download');
   }
   if (downloadUrl) urls.push(downloadUrl);
   urls.push(
-    h1 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/attachments/' + attachId + '?action=download&entity_type=task&entity_id=' + taskId,
-    h2 + '/api/v3/portal/' + ep + '/projects/' + projectId + '/attachments/' + attachId + '?action=download&entity_type=task&entity_id=' + taskId,
-    zohoBase(dc) + '/portal/' + ep + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/' + attachId + '/',
-    zohoBase(dc) + '/portal/' + ep + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/' + attachId + '/download/',
+    h1 + '/api/v3/portal/' + portal + '/projects/' + projectId + '/attachments/' + attachId + '?action=download&entity_type=task&entity_id=' + taskId,
   );
   for (const url of urls) {
     try {
       console.log('[ZOHO] Trying download URL:', url);
       const r = await fetch(url, {
-        headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+        headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
         signal: AbortSignal.timeout(15000)
       });
       console.log('[ZOHO] Download response:', r.status, r.headers.get('content-type'));
@@ -1984,7 +2191,7 @@ async function zohoDownloadAttachment(token, portal, projectId, taskId, attachId
         // Could be a response with download_url
         if (json.download_url) {
           console.log('[ZOHO] Following download_url:', json.download_url);
-          const r2 = await fetch(json.download_url, { headers: { 'Authorization': 'Zoho-oauthtoken ' + token }, signal: AbortSignal.timeout(15000) });
+          const r2 = await fetch(json.download_url, { headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken }, signal: AbortSignal.timeout(15000) });
           if (r2.ok) { const t2 = await r2.text(); try { return { ok:true, data: JSON.parse(t2), raw: t2 }; } catch(e2) { return { ok:true, data:null, raw:t2 }; } }
         }
         return { ok: true, data: json, raw: text };
@@ -1999,15 +2206,16 @@ async function zohoDownloadAttachment(token, portal, projectId, taskId, attachId
 
 async function zohoGetTaskComments(token, portal, projectId, taskId, dc) {
   try {
-    const url = zohoBase(dc) + '/portal/' + encodeURIComponent(portal) + '/projects/' + projectId + '/tasks/' + taskId + '/comments/';
+    const accessToken = await zohoGetAccessToken(token, dc);
+    const url = zohoBase(dc) + '/portal/' + portal + '/projects/' + projectId + '/tasks/' + taskId + '/comments?page=1&per_page=100';
     console.log('[ZOHO] Getting task comments:', url);
     const r = await fetch(url, {
-      headers: { 'Authorization': 'Zoho-oauthtoken ' + token },
+      headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
       signal: AbortSignal.timeout(15000)
     });
     if (!r.ok) return { ok: false, error: 'HTTP ' + r.status };
     const d = await r.json().catch(() => ({}));
-    const comments = d.comments || [];
+    const comments = d.comments || (Array.isArray(d) ? d : []);
     console.log('[ZOHO] Comments count:', comments.length);
     // Find the comment with WEBAPI_STEPS marker — prefer base64 over plain JSON
     let b64Result = null, plainResult = null;
