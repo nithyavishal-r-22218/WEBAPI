@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════
 const G = {
   recordings:[], cases:[], results:[],
-  settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light', zohoToken:'', zohoPortal:'', zohoDC:'.com' },
+  settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light', zohoToken:'', zohoPortal:'', zohoDC:'.com', zpClientId:'', zpClientSecret:'', zpPortalId:'', zpPortals:[], zpEnvironments:[] },
   live:{ steps:[], network:[], recording:false, name:'', startUrl:'', t0:null, id:null },
   genFW:'playwright', genLang:'javascript', genCode:'', genRecId:'',
   editCaseId:null,
@@ -346,9 +346,16 @@ function bindAll() {
   document.querySelectorAll('.rd-type').forEach(el => el.addEventListener('click', () => pickRdType(el)));
   $('rdLenSlider').addEventListener('input', updateRdPreview);
 
-  // Zoho Projects
+  // ZP Connection
   $('saveZohoBtn').addEventListener('click', saveZohoSettings);
   $('testZohoBtn').addEventListener('click', testZohoConnection);
+  $('zpPortalSaveBtn').addEventListener('click', saveZpPortal);
+  $('zpPortalCancelBtn').addEventListener('click', () => { $('zpPortalForm').style.display = 'none'; _zpEditPortalIdx = -1; });
+  $('zpEnvSaveBtn').addEventListener('click', saveZpEnvironment);
+  $('zpEnvCancelBtn').addEventListener('click', () => { $('zpEnvForm').style.display = 'none'; _zpEditEnvIdx = -1; });
+  $('zpCredToggle').addEventListener('click', () => toggleZpSection('zpCredBody', 'zpCredArrow'));
+  $('zpPortalToggle').addEventListener('click', () => toggleZpSection('zpPortalBody', 'zpPortalArrow'));
+  $('zpEnvToggle').addEventListener('click', () => toggleZpSection('zpEnvBody', 'zpEnvArrow'));
   $('zohoExportBtn').addEventListener('click', openZohoExportModal);
   $('zohoExpRec').addEventListener('change', () => { $('zohoExportBtn').disabled = !gv('zohoExpRec'); });
   $('closeZohoExportModal').addEventListener('click', () => closeModal('zohoExportModal'));
@@ -392,6 +399,10 @@ function bindAll() {
       case 'deleteRec':     deleteRec(id);          break;
       case 'renameRec':    renameRec(id);          break;
       case 'loadRec':      loadRecording(id);      break;
+      case 'zpEditPortal': openZpPortalForm(parseInt(id)); break;
+      case 'zpDelPortal':  deleteZpPortal(parseInt(id)); break;
+      case 'zpEditEnv':    openZpEnvForm(parseInt(id)); break;
+      case 'zpDelEnv':     deleteZpEnvironment(parseInt(id)); break;
     }
   });
 }
@@ -1254,9 +1265,15 @@ function applySettings() {
   sv('sKey',  G.settings.key);
   sv('sFw',   G.settings.fw);
   sv('sLang', G.settings.lang);
+  sv('zpClientId', G.settings.zpClientId || '');
+  sv('zpClientSecret', G.settings.zpClientSecret || '');
   sv('zohoToken', G.settings.zohoToken || '');
-  sv('zohoPortal', G.settings.zohoPortal || '');
-  sv('zohoDC', G.settings.zohoDC || '.com');
+  if (G.settings.zpClientId || G.settings.zpClientSecret) {
+    const ti = $('zpTokenInfo');
+    if (ti) ti.style.display = 'block';
+  }
+  renderZpPortals();
+  renderZpEnvironments();
   if (G.settings.theme === 'dark') applyDark(); else applyLight();
 }
 
@@ -1374,7 +1391,7 @@ function showPg(name) {
   if (name === 'tests')    renderTests();
   if (name === 'results')  renderResults();
   if (name === 'generate') populateGenSel();
-  if (name === 'zoho')     populateZohoRecSel();
+  if (name === 'zoho')     { populateZohoRecSel(); renderZpPortals(); renderZpEnvironments(); }
 }
 
 function openModal(id)  { $(id)?.classList.add('on'); }
@@ -1470,24 +1487,32 @@ function applyRandomData() {
 }
 
 // ═══════════════════════════════════════════════════
-//  ZOHO PROJECTS INTEGRATION
+//  ZP INTEGRATION
 // ═══════════════════════════════════════════════════
 
 function getZohoCreds() {
-  return { token: G.settings.zohoToken, portal: G.settings.zohoPortal, dc: G.settings.zohoDC || '.com' };
+  // Use first portal as default
+  const portals = G.settings.zpPortals || [];
+  const firstPortal = portals[0] || {};
+  return { token: G.settings.zohoToken, portal: firstPortal.name || G.settings.zohoPortal || '', dc: G.settings.zohoDC || '.com', clientId: G.settings.zpClientId, clientSecret: G.settings.zpClientSecret, portalId: firstPortal.id || G.settings.zpPortalId || '' };
 }
 
 async function saveZohoSettings() {
-  G.settings.zohoToken  = gv('zohoToken');
-  G.settings.zohoPortal = gv('zohoPortal');
-  G.settings.zohoDC     = gv('zohoDC') || '.com';
+  G.settings.zpClientId     = gv('zpClientId');
+  G.settings.zpClientSecret = gv('zpClientSecret');
+  G.settings.zohoToken      = gv('zohoToken');
   await bg('SAVE_SETTINGS', { s: G.settings });
-  toast('Zoho settings saved!', 'pass');
+  if (G.settings.zpClientId || G.settings.zpClientSecret) {
+    const ti = $('zpTokenInfo');
+    if (ti) ti.style.display = 'block';
+  }
+  toast('ZP credentials saved!', 'pass');
 }
 
 async function testZohoConnection() {
-  const token = gv('zohoToken'), portal = gv('zohoPortal'), dc = gv('zohoDC') || '.com';
-  if (!token || !portal) { toast('Enter token & portal first', 'fail'); return; }
+  const token = gv('zohoToken');
+  const { portal, dc } = getZohoCreds();
+  if (!token || !portal) { toast('Enter refresh token & add a portal first', 'fail'); return; }
   const st = $('zohoConnStatus');
   st.style.display = 'block';
   st.style.background = 'rgba(59,130,246,.1)';
@@ -1498,16 +1523,178 @@ async function testZohoConnection() {
     st.style.background = 'rgba(34,197,94,.1)';
     st.style.color = '#22c55e';
     st.textContent = '✓ Connected — ' + r.count + ' project(s) found';
-    // auto-save on success
     G.settings.zohoToken = token;
-    G.settings.zohoPortal = portal;
-    G.settings.zohoDC = dc;
+    G.settings.zpClientId = gv('zpClientId');
+    G.settings.zpClientSecret = gv('zpClientSecret');
     await bg('SAVE_SETTINGS', { s: G.settings });
   } else {
     st.style.background = 'rgba(239,68,68,.1)';
     st.style.color = '#ef4444';
     st.textContent = '✗ ' + (r?.error || 'Connection failed');
   }
+}
+
+// ── ZP Portals (multiple) ────────────────────────────
+let _zpEditPortalIdx = -1;
+
+function renderZpPortals() {
+  const portals = G.settings.zpPortals || [];
+  const wrap = $('zpPortalList');
+  if (!wrap) return;
+  const form = $('zpPortalForm');
+
+  if (!portals.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:18px 0">'
+      + '<div style="font-size:11px;color:var(--t3);margin-bottom:8px">No portals configured</div>'
+      + '<button class="btn btn-dark btn-sm" id="zpPortalAddCenterBtn">+ Add Portal</button>'
+      + '</div>';
+    if (form) form.style.display = 'none';
+    const cb = $('zpPortalAddCenterBtn');
+    if (cb) cb.addEventListener('click', () => openZpPortalForm(-1));
+    return;
+  }
+
+  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px">'
+    + '<button class="btn btn-dark btn-xs" id="zpPortalAddTopBtn">+ Add</button></div>';
+  portals.forEach((p, i) => {
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--rs);margin-bottom:4px">'
+      + '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:12px;font-weight:600;color:var(--tx)">' + escHtml(p.name) + '</div>'
+        + (p.id ? '<div style="font-size:10.5px;color:var(--t3);font-family:\'DM Mono\',monospace">ID: ' + escHtml(p.id) + '</div>' : '')
+      + '</div>'
+      + '<button class="ia edit" data-action="zpEditPortal" data-id="' + i + '" title="Edit">✏️</button>'
+      + '<button class="ia del" data-action="zpDelPortal" data-id="' + i + '" title="Delete">🗑</button>'
+      + '</div>';
+  });
+  wrap.innerHTML = html;
+  const tb = $('zpPortalAddTopBtn');
+  if (tb) tb.addEventListener('click', () => openZpPortalForm(-1));
+}
+
+function openZpPortalForm(idx) {
+  _zpEditPortalIdx = idx;
+  const form = $('zpPortalForm');
+  if (!form) return;
+  form.style.display = 'block';
+  if (idx >= 0 && (G.settings.zpPortals || [])[idx]) {
+    sv('zpPortalName', G.settings.zpPortals[idx].name);
+    sv('zpPortalId', G.settings.zpPortals[idx].id || '');
+  } else {
+    sv('zpPortalName', '');
+    sv('zpPortalId', '');
+  }
+}
+
+async function saveZpPortal() {
+  const name = gv('zpPortalName'), id = gv('zpPortalId');
+  if (!name) { toast('Portal name is required', 'fail'); return; }
+  if (!G.settings.zpPortals) G.settings.zpPortals = [];
+  if (_zpEditPortalIdx >= 0) {
+    G.settings.zpPortals[_zpEditPortalIdx] = { name, id };
+  } else {
+    G.settings.zpPortals.push({ name, id });
+  }
+  // Keep legacy field in sync with first portal
+  G.settings.zohoPortal = G.settings.zpPortals[0]?.name || '';
+  G.settings.zpPortalId = G.settings.zpPortals[0]?.id || '';
+  await bg('SAVE_SETTINGS', { s: G.settings });
+  _zpEditPortalIdx = -1;
+  $('zpPortalForm').style.display = 'none';
+  renderZpPortals();
+  toast('Portal saved!', 'pass');
+}
+
+async function deleteZpPortal(idx) {
+  if (!G.settings.zpPortals) return;
+  G.settings.zpPortals.splice(idx, 1);
+  G.settings.zohoPortal = G.settings.zpPortals[0]?.name || '';
+  G.settings.zpPortalId = G.settings.zpPortals[0]?.id || '';
+  await bg('SAVE_SETTINGS', { s: G.settings });
+  renderZpPortals();
+  toast('Portal removed', 'info');
+}
+
+// ── ZP Environments (multiple, URL only) ─────────────
+let _zpEditEnvIdx = -1;
+
+function renderZpEnvironments() {
+  const envs = G.settings.zpEnvironments || [];
+  const wrap = $('zpEnvList');
+  if (!wrap) return;
+  const form = $('zpEnvForm');
+
+  if (!envs.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:18px 0">'
+      + '<div style="font-size:11px;color:var(--t3);margin-bottom:8px">No environments configured</div>'
+      + '<button class="btn btn-dark btn-sm" id="zpEnvAddCenterBtn">+ Add Environment</button>'
+      + '</div>';
+    if (form) form.style.display = 'none';
+    const cb = $('zpEnvAddCenterBtn');
+    if (cb) cb.addEventListener('click', () => openZpEnvForm(-1));
+    return;
+  }
+
+  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:6px">'
+    + '<button class="btn btn-dark btn-xs" id="zpEnvAddTopBtn">+ Add</button></div>';
+  envs.forEach((env, i) => {
+    const label = typeof env === 'string' ? env : env.url;
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--rs);margin-bottom:4px">'
+      + '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:11.5px;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:\'DM Mono\',monospace">' + escHtml(label) + '</div>'
+      + '</div>'
+      + '<button class="ia edit" data-action="zpEditEnv" data-id="' + i + '" title="Edit">✏️</button>'
+      + '<button class="ia del" data-action="zpDelEnv" data-id="' + i + '" title="Delete">🗑</button>'
+      + '</div>';
+  });
+  wrap.innerHTML = html;
+  const tb = $('zpEnvAddTopBtn');
+  if (tb) tb.addEventListener('click', () => openZpEnvForm(-1));
+}
+
+function openZpEnvForm(idx) {
+  _zpEditEnvIdx = idx;
+  const form = $('zpEnvForm');
+  if (!form) return;
+  form.style.display = 'block';
+  if (idx >= 0 && G.settings.zpEnvironments[idx]) {
+    const env = G.settings.zpEnvironments[idx];
+    sv('zpEnvUrl', typeof env === 'string' ? env : env.url);
+  } else {
+    sv('zpEnvUrl', '');
+  }
+}
+
+async function saveZpEnvironment() {
+  const url = gv('zpEnvUrl');
+  if (!url) { toast('URL is required', 'fail'); return; }
+  if (!G.settings.zpEnvironments) G.settings.zpEnvironments = [];
+  if (_zpEditEnvIdx >= 0) {
+    G.settings.zpEnvironments[_zpEditEnvIdx] = { url };
+  } else {
+    G.settings.zpEnvironments.push({ url });
+  }
+  await bg('SAVE_SETTINGS', { s: G.settings });
+  _zpEditEnvIdx = -1;
+  $('zpEnvForm').style.display = 'none';
+  renderZpEnvironments();
+  toast('Environment saved!', 'pass');
+}
+
+async function deleteZpEnvironment(idx) {
+  if (!G.settings.zpEnvironments) return;
+  G.settings.zpEnvironments.splice(idx, 1);
+  await bg('SAVE_SETTINGS', { s: G.settings });
+  renderZpEnvironments();
+  toast('Environment removed', 'info');
+}
+
+// ── ZP Section Toggles ──────────────────────────────
+function toggleZpSection(bodyId, arrowId) {
+  const body = $(bodyId), arrow = $(arrowId);
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  if (arrow) arrow.textContent = hidden ? '▼' : '▶';
 }
 
 function populateZohoRecSel() {
@@ -1528,7 +1715,7 @@ async function openZohoExportModal() {
   const rec = G.recordings.find(r => r.id === recId);
   if (!rec) return;
   const { token, portal } = getZohoCreds();
-  if (!token || !portal) { toast('Configure Zoho connection first', 'fail'); return; }
+  if (!token || !portal) { toast('Configure ZP connection first', 'fail'); return; }
   const dc = getZohoCreds().dc;
 
   // Pre-fill
@@ -1619,7 +1806,7 @@ async function doZohoExport() {
       msg += ' · ' + ok + '/' + r.attachments.length + ' attachments';
     }
     st.textContent = msg;
-    toast('📤 Exported to Zoho!', 'pass');
+    toast('📤 Exported to ZP!', 'pass');
   } else {
     st.style.background = 'rgba(239,68,68,.1)';
     st.style.color = '#ef4444';
@@ -1628,7 +1815,7 @@ async function doZohoExport() {
   }
 }
 
-// ── Zoho Import ──────────────────────────────────────
+// ── ZP Import ──────────────────────────────────────
 let _zohoTasks = [];
 let _zohoSelectedTask = null;
 let _zohoImportedSteps = null;
@@ -1823,7 +2010,7 @@ async function importZohoTask() {
 
   const rec = {
     id: uid(),
-    name: '[Zoho] ' + (task.name || 'Imported'),
+    name: '[ZP] ' + (task.name || 'Imported'),
     steps: stepsData?.steps || [],
     network: stepsData?.network || [],
     startUrl: stepsData?.startUrl || '',
@@ -1871,7 +2058,7 @@ async function runZohoTask() {
 
     rec = {
       id: uid(),
-      name: '[Zoho] ' + (task.name || 'Test'),
+      name: '[ZP] ' + (task.name || 'Test'),
       steps: stepsData.steps,
       network: stepsData.network || [],
       startUrl: stepsData.startUrl || '',
@@ -1915,7 +2102,7 @@ async function runZohoTask() {
     G.results.unshift(run);
     await bg('SAVE_RESULTS', { results: G.results });
 
-    // Upload report back to Zoho
+    // Upload report back to ZP
     const { token, portal, dc } = getZohoCreds();
     if (token && portal && _zohoSelectedTask.projectId) {
       try {
