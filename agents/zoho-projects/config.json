@@ -1,0 +1,86 @@
+{
+  "name": "zoho-projects-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end testing suite for Zoho Projects web application",
+
+  "environment": {
+    "ZOHO_EMAIL": "your-email@example.com",
+    "ZOHO_PASSWORD": "your-password",
+    "HEADLESS": "false",
+    "KEEP_BROWSER_OPEN": "false"
+  },
+
+  "zohoProjects": {
+    "baseUrl": "https://projects.zoho.com",
+    "loginUrl": "https://accounts.zoho.com/signin",
+
+    "timeouts": {
+      "navigation": 30000,
+      "element": 10000,
+      "typing": 100
+    },
+
+    "selectors": {
+      "login": {
+        "emailInput": "#login_id",
+        "nextButton": "#nextbtn",
+        "passwordInput": "#password",
+        "signInButton": "#nextbtn"
+      },
+      "dashboard": {
+        "newProjectButton": "[data-test='new-project-btn']",
+        "projectsList": ".projects-list"
+      },
+      "project": {
+        "nameInput": "#project-name",
+        "descriptionInput": "#project-description",
+        "createButton": "#create-project-btn"
+      },
+      "task": {
+        "newTaskButton": "[data-test='new-task-btn']",
+        "taskNameInput": "#task-name",
+        "taskDescriptionInput": "#task-description",
+        "assigneeDropdown": "#task-assignee",
+        "priorityDropdown": "#task-priority",
+        "saveTaskButton": "#save-task-btn"
+      }
+    }
+  },
+
+  "testSuites": {
+    "smoke": [
+      "loginTest",
+      "searchProjectTest"
+    ],
+    "full": [
+      "loginTest",
+      "createProjectTest",
+      "fullWorkflowTest",
+      "searchProjectTest"
+    ],
+    "performance": [
+      "performanceTest"
+    ],
+    "custom": [
+      "customStepTest"
+    ]
+  },
+
+  "reporting": {
+    "screenshots": true,
+    "screenshotPath": "./test-results/screenshots",
+    "resultsPath": "./test-results/reports",
+    "formats": ["json", "html"]
+  },
+
+  "puppeteer": {
+    "headless": false,
+    "slowMo": 0,
+    "args": [
+      "--start-maximized",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage"
+    ]
+  }
+}
