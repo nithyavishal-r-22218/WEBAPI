@@ -196,6 +196,20 @@
       #__webapi_lpanel .lp-attr-val{color:#78350f;font-family:monospace;word-break:break-all}
       #__webapi_lpanel .lp-use{width:100%;margin:0;padding:9px;border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:700;cursor:pointer;border-radius:0 0 10px 10px;transition:background .15s}
       #__webapi_lpanel .lp-use:hover{background:#1d4ed8}
+      #__webapi_sleep_pill{position:fixed;z-index:2147483647;display:none;background:#fff;border:1px solid #d1d5db;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);font-family:-apple-system,system-ui,sans-serif;padding:12px 16px;width:280px}
+      #__webapi_sleep_pill .sp-title{font-size:11px;font-weight:700;color:#1e293b;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+      #__webapi_sleep_pill .sp-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+      #__webapi_sleep_pill .sp-row label{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+      #__webapi_sleep_pill .sp-row input{flex:1;height:30px;border:1px solid #d1d5db;border-radius:6px;padding:0 8px;font-size:12px;font-family:'DM Mono',monospace;color:#1e293b;outline:none;background:#fff}
+      #__webapi_sleep_pill .sp-row input:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.15)}
+      #__webapi_sleep_pill .sp-btns{display:flex;gap:6px;justify-content:flex-end}
+      #__webapi_sleep_pill .sp-btn{padding:5px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:none;transition:all .1s}
+      #__webapi_sleep_pill .sp-save{background:#2563eb;color:#fff}
+      #__webapi_sleep_pill .sp-save:hover{background:#1d4ed8}
+      #__webapi_sleep_pill .sp-cancel{background:#f1f5f9;color:#64748b;border:1px solid #d1d5db}
+      #__webapi_sleep_pill .sp-cancel:hover{background:#e2e8f0}
+      #__webapi_sleep_pill .sp-skip{background:none;color:#94a3b8;font-weight:600;padding:5px 8px}
+      #__webapi_sleep_pill .sp-skip:hover{color:#64748b}
     `;
     document.documentElement.appendChild(locatorStyles);
   }
@@ -221,6 +235,7 @@
 
     locatorPanel.style.top = top + 'px';
     locatorPanel.style.left = left + 'px';
+    locatorPanel._elRect = { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
 
     const tag = el.tagName.toLowerCase();
     const id = el.id ? '#' + el.id : '';
@@ -266,6 +281,7 @@
       + '<button class="lp-use" id="__lp_use">✓ Use Selected Locator</button>';
 
     locatorPanel.style.display = 'block';
+    freezePage();
 
     // Select first locator by default
     const firstRow = locatorPanel.querySelector('.lp-row');
@@ -302,8 +318,8 @@
           var ridx = parseInt(row.dataset.idx);
           var rloc = locators[ridx];
           if (rloc) {
-            onSelect(rloc);
             hideLocatorPanel();
+            showSleepPill(rloc, onSelect);
           }
         }
         return;
@@ -316,14 +332,8 @@
           var uidx = parseInt(sel2.dataset.idx);
           var uloc = locators[uidx];
           if (uloc) {
-            if (onSelect) {
-              onSelect(uloc);
-            }
-            chrome.runtime.sendMessage({
-              type: 'LOCATOR_SELECTED',
-              locator: uloc
-            });
             hideLocatorPanel();
+            showSleepPill(uloc, onSelect);
           }
         }
         return;
@@ -342,6 +352,85 @@
 
   function hideLocatorPanel() {
     if (locatorPanel) locatorPanel.style.display = 'none';
+    // Only unfreeze if sleep pill is not visible
+    if (!sleepPill || sleepPill.style.display === 'none') unfreezePage();
+  }
+
+  // ── Sleep pill popup ───────────────────────────────────────────────────
+
+  var sleepPill = null;
+
+  function showSleepPill(locator, onSelect) {
+    ensureStyles();
+    hideHighlight();
+    if (!sleepPill) {
+      sleepPill = document.createElement('div');
+      sleepPill.id = '__webapi_sleep_pill';
+      document.documentElement.appendChild(sleepPill);
+    }
+
+    // Position near the element (use stored rect from locator panel)
+    var rect = locatorPanel && locatorPanel._elRect;
+    if (rect) {
+      var pillH = 120, pillW = 280;
+      var ptop = rect.bottom + 8;
+      var pleft = rect.left;
+      if (ptop + pillH > window.innerHeight) ptop = Math.max(8, rect.top - pillH - 8);
+      if (pleft + pillW > window.innerWidth) pleft = Math.max(8, window.innerWidth - pillW - 8);
+      sleepPill.style.top = ptop + 'px';
+      sleepPill.style.left = pleft + 'px';
+      sleepPill.style.transform = 'none';
+    } else {
+      sleepPill.style.top = '50%';
+      sleepPill.style.left = '50%';
+      sleepPill.style.transform = 'translate(-50%, -50%)';
+    }
+
+    sleepPill.innerHTML =
+      '<div class="sp-title">⏱ Set Sleep Time</div>'
+      + '<div class="sp-row"><label>ms</label><input type="number" id="__sp_input" min="0" step="100" value="0" placeholder="0"/></div>'
+      + '<div class="sp-btns">'
+        + '<button class="sp-btn sp-skip" id="__sp_skip">Skip</button>'
+        + '<button class="sp-btn sp-cancel" id="__sp_cancel">Cancel</button>'
+        + '<button class="sp-btn sp-save" id="__sp_save">Save</button>'
+      + '</div>';
+
+    sleepPill.style.display = 'block';
+    freezePage();
+
+    var input = sleepPill.querySelector('#__sp_input');
+    if (input) input.focus();
+
+    sleepPill.onclick = function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (e.target.id === '__sp_save') {
+        var ms = parseInt((sleepPill.querySelector('#__sp_input') || {}).value) || 0;
+        locator.sleep = ms;
+        hideSleepPill();
+        if (onSelect) onSelect(locator);
+        chrome.runtime.sendMessage({ type: 'LOCATOR_SELECTED', locator: locator });
+        return;
+      }
+      if (e.target.id === '__sp_skip') {
+        locator.sleep = 0;
+        hideSleepPill();
+        if (onSelect) onSelect(locator);
+        chrome.runtime.sendMessage({ type: 'LOCATOR_SELECTED', locator: locator });
+        return;
+      }
+      if (e.target.id === '__sp_cancel') {
+        hideSleepPill();
+        return;
+      }
+    };
+  }
+
+  function hideSleepPill() {
+    if (sleepPill) sleepPill.style.display = 'none';
+    // Only unfreeze if locator panel is also not visible
+    if (!locatorPanel || locatorPanel.style.display === 'none') unfreezePage();
   }
 
   function escHtml(s) {
@@ -359,10 +448,10 @@
     freezeStyle = document.createElement('style');
     freezeStyle.id = '__webapi_freeze';
     freezeStyle.textContent = `
-      *:not(#__webapi_highlight):not(#__webapi_hlabel):not(#__webapi_lpanel):not(#__webapi_lpanel *):not(#__webapi_freeze_badge) {
+      *:not(#__webapi_highlight):not(#__webapi_hlabel):not(#__webapi_lpanel):not(#__webapi_lpanel *):not(#__webapi_sleep_pill):not(#__webapi_sleep_pill *):not(#__webapi_freeze_badge) {
         pointer-events: none !important;
       }
-      #__webapi_highlight, #__webapi_hlabel, #__webapi_lpanel, #__webapi_lpanel * {
+      #__webapi_highlight, #__webapi_hlabel, #__webapi_lpanel, #__webapi_lpanel *, #__webapi_sleep_pill, #__webapi_sleep_pill * {
         pointer-events: auto !important;
       }
     `;
@@ -388,21 +477,32 @@
   }
 
   function onInspectMove(e) {
+    // Completely skip inspect when sleep pill or locator panel is visible
+    var sp = document.getElementById('__webapi_sleep_pill');
+    if (sp && sp.style.display !== 'none') return;
+    var lp = document.getElementById('__webapi_lpanel');
+    if (lp && lp.style.display !== 'none') return;
     const el = e.target;
     if (!el || el === document.documentElement) { hideHighlight(); return; }
     // Allow contenteditable body (rich text editors) but skip regular body
     if (el === document.body && el.getAttribute('contenteditable') !== 'true') { hideHighlight(); return; }
-    if (el.id && el.id.startsWith('__webapi_')) return;
-    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
+    if (el.id && el.id.startsWith('__')) return;
+    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel') || el.closest('#__webapi_sleep_pill')) return;
     if (el.id === '__webapi_freeze_badge') return;
     updateHighlight(el);
   }
 
   function onInspectClick(e) {
+    // Completely skip inspect when sleep pill or locator panel is visible
+    var sp = document.getElementById('__webapi_sleep_pill');
+    if (sp && sp.style.display !== 'none') { e.stopPropagation(); return; }
+    var lp = document.getElementById('__webapi_lpanel');
+    if (lp && lp.style.display !== 'none') { e.stopPropagation(); return; }
     const el = e.target;
     if (el.id === '__webapi_freeze_badge') return;
     if (el.closest('#__webapi_lpanel')) return; // panel clicks handled internally
-    if (el.id && el.id.startsWith('__webapi_')) return;
+    if (el.closest('#__webapi_sleep_pill')) { e.stopPropagation(); return; }
+    if (el.id && el.id.startsWith('__')) return;
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -465,7 +565,13 @@
     }
     if (msg.type === 'HIGHLIGHT') {
       try {
-        const el = document.querySelector(msg.sel);
+        var el;
+        if (msg.sel && msg.sel.startsWith('/')) {
+          var xr = document.evaluate(msg.sel, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          el = xr.singleNodeValue;
+        } else {
+          el = document.querySelector(msg.sel);
+        }
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           const orig = el.style.outline;

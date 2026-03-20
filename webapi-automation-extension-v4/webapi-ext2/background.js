@@ -60,7 +60,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         break;
       }
       case 'LOCATOR_SELECTED': {
-        broadcast({type:'LOCATOR_SELECTED', locator: msg.locator});
+        broadcast({type:'LOCATOR_SELECTED', locator: msg.locator, sleep: msg.locator?.sleep || 0});
         reply({ok:true});
         break;
       }
@@ -228,57 +228,56 @@ function injectRecorder() {
   let seq = 0;
   let lastActionKey = '';   // for dedup
 
-  // ── ZPQA-first selector builder ────────────────────────────────────────────
+  // ── ZPQA-first XPath selector builder ────────────────────────────────────────
   function sel(el) {
-    if (!el) return 'body';
+    if (!el) return '//body';
+    const tag = el.tagName ? el.tagName.toLowerCase() : '*';
     if (el === document.body) {
       // Detect contenteditable body (rich text editors)
       if (el.getAttribute('contenteditable') === 'true') {
         const aria = el.getAttribute('aria-label');
-        if (aria) return `body[aria-label="${aria}"]`;
-        const cls = Array.from(el.classList || []).filter(c => !/^(hover|focus|active|is-|ng-|v-|css-)/.test(c)).slice(0, 2);
-        if (cls.length) return 'body.' + cls.join('.');
-        return 'body[contenteditable="true"]';
+        if (aria) return `//body[@aria-label='${aria}']`;
+        return `//body[@contenteditable='true']`;
       }
-      return 'body';
+      return '//body';
     }
     // Handle contenteditable elements
     if (el.getAttribute && el.getAttribute('contenteditable') === 'true') {
       const aria = el.getAttribute('aria-label');
-      if (aria) return `[aria-label="${aria}"]`;
+      if (aria) return `//${tag}[@aria-label='${aria}']`;
       const role = el.getAttribute('role');
-      if (role) return `[role="${role}"][contenteditable="true"]`;
+      if (role) return `//${tag}[@role='${role}' and @contenteditable='true']`;
     }
     // Priority 1: ZPQA locator
     const zpqa = el.getAttribute('data-zpqa');
-    if (zpqa) return `[data-zpqa="${zpqa}"]`;
+    if (zpqa) return `//${tag}[@data-zpqa='${zpqa}']`;
     // Priority 2: test IDs
     const tid = el.dataset?.testid || el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-cy') || el.getAttribute('data-qa');
-    if (tid) return `[data-testid="${tid}"]`;
+    if (tid) return `//${tag}[@data-testid='${tid}']`;
     // Priority 3: aria-label (skip trivial "true"/"false" values)
     const aria = el.getAttribute('aria-label');
-    if (aria && aria !== 'true' && aria !== 'false') return `[aria-label="${aria}"]`;
+    if (aria && aria !== 'true' && aria !== 'false') return `//${tag}[@aria-label='${aria}']`;
     // Priority 3b: data-tooltip
     const tooltip = el.getAttribute('data-tooltip');
-    if (tooltip && tooltip !== 'true' && tooltip !== 'false') return `[data-tooltip="${tooltip}"]`;
-    // Priority 4: role + aria-label or role + data-tooltip (valid CSS)
+    if (tooltip && tooltip !== 'true' && tooltip !== 'false') return `//${tag}[@data-tooltip='${tooltip}']`;
+    // Priority 4: role + aria-label or role + data-tooltip
     const role = el.getAttribute('role');
-    if (role && aria && aria !== 'true') return `[role="${role}"][aria-label="${aria}"]`;
-    if (role && tooltip && tooltip !== 'true') return `[role="${role}"][data-tooltip="${tooltip}"]`;
-    // Priority 4b: role + text (Playwright-only :has-text, handled by replay sel())
+    if (role && aria && aria !== 'true') return `//${tag}[@role='${role}' and @aria-label='${aria}']`;
+    if (role && tooltip && tooltip !== 'true') return `//${tag}[@role='${role}' and @data-tooltip='${tooltip}']`;
+    // Priority 4b: role + text
     const txt  = (el.innerText || '').trim().slice(0, 30);
-    if (role && txt) return `[role="${role}"]:has-text("${txt}")`;
+    if (role && txt) return `//${tag}[@role='${role}' and contains(text(),'${txt.replace(/'/g, "\\'")}')]`;
     // Priority 5: id
-    if (el.id) return '#' + CSS.escape(el.id);
+    if (el.id) return `//${tag}[@id='${el.id}']`;
     // Priority 6: name attr
     const name = el.getAttribute('name');
-    if (name) return `${el.tagName.toLowerCase()}[name="${name}"]`;
+    if (name) return `//${tag}[@name='${name}']`;
     // Priority 7: stable classes
     const cls = Array.from(el.classList || [])
       .filter(c => !/^(hover|focus|active|is-|ng-|v-|css-)/.test(c))
       .slice(0, 2);
-    if (cls.length) return el.tagName.toLowerCase() + '.' + cls.join('.');
-    return el.tagName.toLowerCase();
+    if (cls.length) return `//${tag}[contains(@class,'${cls[0]}')]`;
+    return `//${tag}`;
   }
 
   function snap(el) {
@@ -294,7 +293,7 @@ function injectRecorder() {
   function send(step) {
     // Dedup: skip if same action+target+value as the very last step
     const key = step.action + '|' + step.target + '|' + (step.value || '');
-    if (key === lastActionKey && step.action !== 'navigate') return;
+    if (key === lastActionKey && step.action !== 'NAVIGATE_TO') return;
     lastActionKey = key;
     step.id = ++seq;
     // Flag steps from iframes so replay knows to target the right frame
@@ -425,7 +424,7 @@ function injectRecorder() {
   } // end of isTopFrame pill block
 
   // ── Initial navigate (top frame only) ───────────────────────────────────────
-  if (isTopFrame) send({ action:'navigate', target:location.href, value:'', url:location.href, t:Date.now() });
+  if (isTopFrame) send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() });
 
   // ── Scroll detection & confirmation popup ──────────────────────────────────
   let scrollPopup = null;
@@ -464,7 +463,7 @@ function injectRecorder() {
     document.getElementById('__wb_scroll_yes').addEventListener('click', ev => {
       ev.stopPropagation();
       // Insert scroll_to BEFORE the click step (which was already recorded)
-      chrome.runtime.sendMessage({ type:'REC_INSERT_BEFORE_LAST', step:{ action:'scroll_to', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds, scrollTimeout:10000, scrollAttempts:20 } }).catch(() => {});
+      chrome.runtime.sendMessage({ type:'REC_INSERT_BEFORE_LAST', step:{ action:'SCROLL_TO_ELEMENT', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds, scrollTimeout:10000, scrollAttempts:20 } }).catch(() => {});
       removeScrollPopup();
     });
 
@@ -531,7 +530,7 @@ function injectRecorder() {
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
     if (el.closest('#' + RANDOM_POPUP_ID)) return;
-    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
+    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel') || el.closest('#__webapi_sleep_pill')) return;
     // Only watch meaningful elements (not tiny text nodes)
     if (['SPAN','A','BUTTON','LI','DIV','TD','TH','TR','IMG','SVG','LABEL','SUMMARY'].indexOf(el.tagName) === -1
         && !el.getAttribute('role') && !el.getAttribute('data-zpqa') && !el.classList.length) return;
@@ -542,11 +541,10 @@ function injectRecorder() {
       stopHoverWatch();
       // If hovering caused DOM changes (dropdown/tooltip appeared), record it
       if (hoverMutations >= 2 && hoverEl === el) {
-        const api = window.__WEBAPI_API;
-        const tgt = api ? (api.getAllLocators(el)[0]?.value || sel(el)) : sel(el);
+        const tgt = sel(el);
         const tagName = el.tagName.toLowerCase();
         const text = (el.innerText||el.getAttribute('aria-label')||el.title||'').trim().slice(0,60);
-        send({ action:'hover', target:tgt, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:snap(el) });
+        send({ action:'MOVE_TO_ELEMENT', target:tgt, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:snap(el) });
       }
       hoverMutations = 0;
       hoverEl = null;
@@ -571,7 +569,7 @@ function injectRecorder() {
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
     if (el.closest('#' + RANDOM_POPUP_ID)) return;
-    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
+    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel') || el.closest('#__webapi_sleep_pill')) return;
     if (window.__WEBAPI_API) window.__WEBAPI_API.updateHighlight(el);
   }, true);
 
@@ -581,24 +579,24 @@ function injectRecorder() {
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
     if (el.closest('#' + RANDOM_POPUP_ID)) return;
-    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
+    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel') || el.closest('#__webapi_sleep_pill')) return;
 
     const api = window.__WEBAPI_API;
 
-    function recordClick(target, tagName, text, bounds) {
-      send({ action:'click', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds });
+    function recordClick(target, tagName, text, bounds, sleep) {
+      send({ action:'CLICK', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds, sleep:sleep||0 });
       // After recording click, check if scroll was detected and offer scroll_to
       maybeShowScrollConfirm(target, tagName, text, bounds);
     }
 
     if (api) {
-      const locators = api.getAllLocators(el);
       const info = { tagName:el.tagName.toLowerCase(), text:(el.innerText||el.value||el.placeholder||'').trim().slice(0,60), url:location.href, bounds:snap(el), t:Date.now() };
+      const locators = api.getAllLocators(el);
       if (locators.length <= 1) {
-        recordClick(locators[0]?.value || sel(el), info.tagName, info.text, info.bounds);
+        recordClick(sel(el), info.tagName, info.text, info.bounds);
       } else {
         api.showLocatorPanel(el, function(loc) {
-          recordClick(loc.value, info.tagName, info.text, info.bounds);
+          recordClick(sel(el), info.tagName, info.text, info.bounds, loc.sleep);
         });
       }
     } else {
@@ -620,22 +618,22 @@ function injectRecorder() {
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#__webapi_scroll_popup')) return;
     if (el.closest('#' + RANDOM_POPUP_ID)) return;
-    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel')) return;
+    if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel') || el.closest('#__webapi_sleep_pill')) return;
 
     const api = window.__WEBAPI_API;
 
-    function recordRightClick(target, tagName, text, bounds) {
-      send({ action:'rightclick', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds });
+    function recordRightClick(target, tagName, text, bounds, sleep) {
+      send({ action:'RIGHT_CLICK', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds, sleep:sleep||0 });
     }
 
     if (api) {
-      const locators = api.getAllLocators(el);
       const info = { tagName:el.tagName.toLowerCase(), text:(el.innerText||el.value||el.placeholder||'').trim().slice(0,60), url:location.href, bounds:snap(el), t:Date.now() };
+      const locators = api.getAllLocators(el);
       if (locators.length <= 1) {
-        recordRightClick(locators[0]?.value || sel(el), info.tagName, info.text, info.bounds);
+        recordRightClick(sel(el), info.tagName, info.text, info.bounds);
       } else {
         api.showLocatorPanel(el, function(loc) {
-          recordRightClick(loc.value, info.tagName, info.text, info.bounds);
+          recordRightClick(sel(el), info.tagName, info.text, info.bounds, loc.sleep);
         });
       }
     } else {
@@ -806,6 +804,7 @@ function injectRecorder() {
     if (randomPopup) return; // suppress input while random prompt is open
     const el = e.target;
     if (el.closest('#' + RANDOM_POPUP_ID)) return;
+    if (el.closest('#__webapi_sleep_pill')) return;
 
     // Handle contenteditable elements (rich text editors like <body contenteditable>)
     const editableRoot = getEditableRoot(el);
@@ -813,10 +812,9 @@ function injectRecorder() {
       clearTimeout(inputMap.get(editableRoot));
       inputMap.set(editableRoot, setTimeout(() => {
         lastActionKey = '';
-        const api = window.__WEBAPI_API;
-        const tgt = api ? (api.getAllLocators(editableRoot)[0]?.value || sel(editableRoot)) : sel(editableRoot);
+        const tgt = sel(editableRoot);
         const content = editableRoot.innerText || editableRoot.textContent || '';
-        const step = { action:'type', target:tgt, tagName:editableRoot.tagName.toLowerCase(),
+        const step = { action:'SEND_KEYS', target:tgt, tagName:editableRoot.tagName.toLowerCase(),
           text:editableRoot.getAttribute('aria-label') || editableRoot.className || 'contenteditable',
           value:content.trim().slice(0, 500), url:location.href, t:Date.now(),
           contenteditable:true };
@@ -829,14 +827,13 @@ function injectRecorder() {
     clearTimeout(inputMap.get(el));
     inputMap.set(el, setTimeout(() => {
       lastActionKey = '';
-      const api = window.__WEBAPI_API;
-      const tgt = api ? (api.getAllLocators(el)[0]?.value || sel(el)) : sel(el);
+      const tgt = sel(el);
       if (el.tagName === 'SELECT') {
-        send({ action:'select', target:tgt, tagName:el.tagName.toLowerCase(),
+        send({ action:'SEND_KEYS', target:tgt, tagName:el.tagName.toLowerCase(),
           text:el.placeholder||el.name||el.ariaLabel||'',
           value:el.value, url:location.href, t:Date.now() });
       } else {
-        const step = { action:'type', target:tgt, tagName:el.tagName.toLowerCase(),
+        const step = { action:'SEND_KEYS', target:tgt, tagName:el.tagName.toLowerCase(),
           text:el.placeholder||el.name||el.ariaLabel||'',
           value:el.value, url:location.href, t:Date.now() };
         showRandomPrompt(step, el);
@@ -851,12 +848,12 @@ function injectRecorder() {
     const el = e.target;
     if (el.closest('#' + PILL_ID)) return;
     if (el.closest('#' + RANDOM_POPUP_ID)) return;
+    if (el.closest('#__webapi_sleep_pill')) return;
     const text = (el.innerText || '').trim().slice(0, 80);
     if (!text) return;
     lastActionKey = '';
-    const api = window.__WEBAPI_API;
-    const tgt = api ? (api.getAllLocators(el)[0]?.value || sel(el)) : sel(el);
-    send({ action:'assert_text', target:tgt, value:text, text, url:location.href, t:Date.now() });
+    const tgt = sel(el);
+    send({ action:'ASSERT_CHECK', target:tgt, value:text, text, url:location.href, t:Date.now() });
     el.style.outline = '2px solid #00d4aa';
     setTimeout(() => el.style.outline = '', 1500);
   }, true);
@@ -888,16 +885,23 @@ function injectRecorder() {
     parts.push(e.key.length === 1 ? e.key.toLowerCase() : e.key);
     const combo = parts.join('+');
 
-    const api = window.__WEBAPI_API;
-    const tgt = api ? (api.getAllLocators(e.target)[0]?.value || sel(e.target)) : sel(e.target);
-    send({ action:'key', target:tgt, value:combo, text:combo, url:location.href, t:Date.now(),
+    const tgt = sel(e.target);
+
+    // Map to specific framework key actions
+    let keyAction = 'SHORTCUT_KEY';
+    if (e.key === 'Enter' && !hasModifier) keyAction = 'ENTER_KEY';
+    else if (e.key === 'Escape' && !hasModifier) keyAction = 'ESCAPE_KEY';
+    else if ((e.key === 'Backspace' || e.key === 'Delete') && !hasModifier) keyAction = 'BACK_SPACE_KEY';
+    else if (hasModifier && ['a','c','x','v'].includes(e.key.toLowerCase())) keyAction = 'CUT_COPY_PASTE_SELECTALL';
+
+    send({ action:keyAction, target:tgt, value:combo, text:combo, url:location.href, t:Date.now(),
            modifiers:{ ctrlKey:e.ctrlKey||e.metaKey, altKey:e.altKey, shiftKey:e.shiftKey } });
   }, true);
 
   // ── Page refresh / navigation capture ───────────────────────────────────────
   window.addEventListener('beforeunload', () => {
     chrome.runtime.sendMessage({ type:'REC_STEP', step:{
-      action:'navigate', target:location.href, value:'', url:location.href,
+      action:'NAVIGATE_TO', target:location.href, value:'', url:location.href,
       note:'page-refresh', t:Date.now(), id:++seq
     }}).catch(() => {});
   });
@@ -905,9 +909,9 @@ function injectRecorder() {
   // ── SPA navigation ───────────────────────────────────────────────────────────
   const pPush = history.pushState.bind(history);
   const pRepl = history.replaceState.bind(history);
-  history.pushState = (...a) => { pPush(...a); setTimeout(() => { lastActionKey=''; send({ action:'navigate', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
-  history.replaceState = (...a) => { pRepl(...a); setTimeout(() => { lastActionKey=''; send({ action:'navigate', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
-  window.addEventListener('popstate', () => { lastActionKey=''; send({ action:'navigate', target:location.href, value:'', url:location.href, t:Date.now() }); });
+  history.pushState = (...a) => { pPush(...a); setTimeout(() => { lastActionKey=''; send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
+  history.replaceState = (...a) => { pRepl(...a); setTimeout(() => { lastActionKey=''; send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
+  window.addEventListener('popstate', () => { lastActionKey=''; send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); });
 
   // ── Network intercept ────────────────────────────────────────────────────────
   const oFetch = window.fetch;
@@ -1165,21 +1169,28 @@ function _randPara(n){const w=['the','quick','brown','fox','jumps','over','lazy'
   const S = (step) => {
     const t=step.target, v=(step.value||'').replace(/'/g,"\\'");
     switch(step.action) {
-      case 'navigate':
+      case 'NAVIGATE_TO':
         if(fw==='playwright') return `  await page.goto('${t}');`;
         if(fw==='cypress')    return `    cy.visit('${t}');`;
         if(fw==='selenium')   return `    driver.get("${t}");`;
         if(fw==='puppeteer')  return `  await page.goto('${t}');`;
         if(fw==='testcafe')   return `  await t.navigateTo('${t}');`;
-        return `// navigate ${t}`;
-      case 'click':
+        return `// NAVIGATE_TO ${t}`;
+      case 'CLICK':
         if(fw==='playwright') return `  await page.click('${t}'); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').click(); // ${step.text||''}`;
         if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).click();`;
         if(fw==='puppeteer')  return `  await page.click('${t}');`;
         if(fw==='testcafe')   return `  await t.click(Selector('${t}'));`;
-        return `// click ${t}`;
-      case 'type':
+        return `// CLICK ${t}`;
+      case 'DOUBLE_CLICK':
+        if(fw==='playwright') return `  await page.dblclick('${t}'); // ${step.text||''}`;
+        if(fw==='cypress')    return `    cy.get('${t}').dblclick(); // ${step.text||''}`;
+        if(fw==='selenium')   return `    new Actions(driver).doubleClick(driver.findElement(By.css("${t}"))).perform();`;
+        if(fw==='puppeteer')  return `  await page.click('${t}', { clickCount: 2 });`;
+        if(fw==='testcafe')   return `  await t.doubleClick(Selector('${t}'));`;
+        return `// DOUBLE_CLICK ${t}`;
+      case 'SEND_KEYS':
         if (isRd(step.value)) {
           const re = rdExprJS(step.value);
           if(fw==='playwright') return `  await page.fill('${t}', ${re});`;
@@ -1193,47 +1204,91 @@ function _randPara(n){const w=['the','quick','brown','fox','jumps','over','lazy'
         if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();\n    driver.findElement(By.css("${t}")).sendKeys("${v}");`;
         if(fw==='puppeteer')  return `  await page.type('${t}', '${v}');`;
         if(fw==='testcafe')   return `  await t.typeText(Selector('${t}'), '${v}', { replace: true });`;
-        return `// type ${t}`;
-      case 'select':
-        if(fw==='playwright') return `  await page.selectOption('${t}', '${v}');`;
-        if(fw==='cypress')    return `    cy.get('${t}').select('${v}');`;
-        if(fw==='selenium')   return `    new Select(driver.findElement(By.css("${t}"))).selectByValue("${v}");`;
-        if(fw==='puppeteer')  return `  await page.select('${t}', '${v}');`;
-        return `// select ${t}`;
-      case 'assert_text':
+        return `// SEND_KEYS ${t}`;
+      case 'CLEAR':
+        if(fw==='playwright') return `  await page.fill('${t}', '');`;
+        if(fw==='cypress')    return `    cy.get('${t}').clear();`;
+        if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();`;
+        if(fw==='puppeteer')  return `  await page.$eval('${t}', el => el.value = '');`;
+        if(fw==='testcafe')   return `  await t.selectText(Selector('${t}')).pressKey('delete');`;
+        return `// CLEAR ${t}`;
+      case 'ASSERT_CHECK':
         if(fw==='playwright') return `  await expect(page.locator('${t}')).toContainText('${v}');`;
         if(fw==='cypress')    return `    cy.get('${t}').should('contain.text', '${v}');`;
         if(fw==='selenium')   return `    assertThat(driver.findElement(By.css("${t}")).getText(), containsString("${v}"));`;
         if(fw==='testcafe')   return `  await t.expect(Selector('${t}').textContent).contains('${v}');`;
-        return `// assert ${t} contains "${v}"`;
-      case 'scroll_to':
+        return `// ASSERT_CHECK ${t} contains "${v}"`;
+      case 'SCROLL_TO_ELEMENT':
         if(fw==='playwright') return `  await page.locator('${t}').scrollIntoViewIfNeeded({ timeout: ${step.scrollTimeout||10000} }); // scroll to element`;
         if(fw==='cypress')    return `    cy.get('${t}', { timeout: ${step.scrollTimeout||10000} }).scrollIntoView();`;
         if(fw==='selenium')   return `    driver.executeScript("arguments[0].scrollIntoView(true)", driver.findElement(By.css("${t}")));`;
         if(fw==='puppeteer')  return `  await page.waitForSelector('${t}', { timeout: ${step.scrollTimeout||10000} });\n  await page.$eval('${t}', el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));`;
         if(fw==='testcafe')   return `  await t.scrollIntoView(Selector('${t}'));`;
-        return `// scroll_to ${t}`;
-      case 'hover':
+        return `// SCROLL_TO_ELEMENT ${t}`;
+      case 'SCROLL_TO_ELEMENT_AND_CLICK':
+        if(fw==='playwright') return `  await page.locator('${t}').scrollIntoViewIfNeeded();\n  await page.click('${t}');`;
+        if(fw==='cypress')    return `    cy.get('${t}').scrollIntoView().click();`;
+        if(fw==='selenium')   return `    {\n      WebElement el = driver.findElement(By.css("${t}"));\n      driver.executeScript("arguments[0].scrollIntoView(true)", el);\n      el.click();\n    }`;
+        return `// SCROLL_TO_ELEMENT_AND_CLICK ${t}`;
+      case 'MOVE_TO_ELEMENT':
+      case 'MOVE_TO_ELEMENT_WITHOUT_CLICK':
         if(fw==='playwright') return `  await page.hover('${t}'); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').trigger('mouseover'); // ${step.text||''}`;
         if(fw==='selenium')   return `    new Actions(driver).moveToElement(driver.findElement(By.css("${t}"))).perform();`;
         if(fw==='puppeteer')  return `  await page.hover('${t}');`;
         if(fw==='testcafe')   return `  await t.hover(Selector('${t}'));`;
-        return `// hover ${t}`;
-      case 'key':
+        return `// ${step.action} ${t}`;
+      case 'ENTER_KEY':
+        if(fw==='playwright') return `  await page.keyboard.press('Enter');`;
+        if(fw==='cypress')    return `    cy.get('${t}').type('{enter}');`;
+        if(fw==='selenium')   return `    new Actions(driver).sendKeys(Keys.ENTER).perform();`;
+        if(fw==='puppeteer')  return `  await page.keyboard.press('Enter');`;
+        if(fw==='testcafe')   return `  await t.pressKey('enter');`;
+        return `// ENTER_KEY`;
+      case 'ESCAPE_KEY':
+        if(fw==='playwright') return `  await page.keyboard.press('Escape');`;
+        if(fw==='cypress')    return `    cy.get('body').type('{esc}');`;
+        if(fw==='selenium')   return `    new Actions(driver).sendKeys(Keys.ESCAPE).perform();`;
+        if(fw==='puppeteer')  return `  await page.keyboard.press('Escape');`;
+        if(fw==='testcafe')   return `  await t.pressKey('escape');`;
+        return `// ESCAPE_KEY`;
+      case 'BACK_SPACE_KEY':
+        if(fw==='playwright') return `  await page.keyboard.press('Backspace');`;
+        if(fw==='cypress')    return `    cy.get('${t}').type('{backspace}');`;
+        if(fw==='selenium')   return `    new Actions(driver).sendKeys(Keys.BACK_SPACE).perform();`;
+        if(fw==='puppeteer')  return `  await page.keyboard.press('Backspace');`;
+        if(fw==='testcafe')   return `  await t.pressKey('backspace');`;
+        return `// BACK_SPACE_KEY`;
+      case 'CUT_COPY_PASTE_SELECTALL':
+      case 'SHORTCUT_KEY':
         if(fw==='playwright') return `  await page.keyboard.press('${v}');`;
         if(fw==='cypress')    return `    cy.get('body').type('${'{'+v.replace(/\+/g,'}{').replace(/{([a-z])}/g,'$1')+'}'}', { release: false });`;
         if(fw==='selenium')   return `    new Actions(driver).sendKeys(${v.includes('+') ? v.split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+v.toUpperCase()}).perform();`;
         if(fw==='puppeteer')  return `  await page.keyboard.press('${v}');`;
         if(fw==='testcafe')   return `  await t.pressKey('${v.toLowerCase().replace(/\+/g,' ')}');`;
-        return `// key ${v}`;
-      case 'rightclick':
+        return `// ${step.action} ${v}`;
+      case 'RIGHT_CLICK':
         if(fw==='playwright') return `  await page.click('${t}', { button: 'right' }); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').rightclick(); // ${step.text||''}`;
         if(fw==='selenium')   return `    new Actions(driver).contextClick(driver.findElement(By.css("${t}"))).perform();`;
         if(fw==='puppeteer')  return `  await page.click('${t}', { button: 'right' });`;
         if(fw==='testcafe')   return `  await t.rightClick(Selector('${t}'));`;
-        return `// rightclick ${t}`;
+        return `// RIGHT_CLICK ${t}`;
+      case 'REFRESH':
+        if(fw==='playwright') return `  await page.reload();`;
+        if(fw==='cypress')    return `    cy.reload();`;
+        if(fw==='selenium')   return `    driver.navigate().refresh();`;
+        return `// REFRESH`;
+      case 'BACK':
+        if(fw==='playwright') return `  await page.goBack();`;
+        if(fw==='cypress')    return `    cy.go('back');`;
+        if(fw==='selenium')   return `    driver.navigate().back();`;
+        return `// BACK`;
+      case 'FORWARD':
+        if(fw==='playwright') return `  await page.goForward();`;
+        if(fw==='cypress')    return `    cy.go('forward');`;
+        if(fw==='selenium')   return `    driver.navigate().forward();`;
+        return `// FORWARD`;
       default: return `  // ${step.action}: ${t}`;
     }
   };
@@ -1264,14 +1319,21 @@ ${stepsCode}
       const py = steps.map(s=>{
         const t=s.target, v=(s.value||'').replace(/"/g,'\\"');
         switch(s.action){
-          case 'navigate': return `    page.goto("${t}")`;
-          case 'click': return `    page.click("${t}")  # ${s.text||''}`;
-          case 'type': return isRd(s.value) ? `    page.fill("${t}", ${rdExprPy(s.value)})` : `    page.fill("${t}", "${v}")`;
-          case 'select': return `    page.select_option("${t}", "${v}")`;
-          case 'assert_text': return `    expect(page.locator("${t}")).to_contain_text("${v}")`;
-          case 'hover': return `    page.hover("${t}")  # ${s.text||''}`;
-          case 'key': return `    page.keyboard.press("${v}")`;
-          case 'rightclick': return `    page.click("${t}", button="right")  # ${s.text||''}`;
+          case 'NAVIGATE_TO': return `    page.goto("${t}")`;
+          case 'CLICK': return `    page.click("${t}")  # ${s.text||''}`;
+          case 'DOUBLE_CLICK': return `    page.dblclick("${t}")  # ${s.text||''}`;
+          case 'SEND_KEYS': return isRd(s.value) ? `    page.fill("${t}", ${rdExprPy(s.value)})` : `    page.fill("${t}", "${v}")`;
+          case 'CLEAR': return `    page.fill("${t}", "")`;
+          case 'ASSERT_CHECK': return `    expect(page.locator("${t}")).to_contain_text("${v}")`;
+          case 'MOVE_TO_ELEMENT': case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': return `    page.hover("${t}")  # ${s.text||''}`;
+          case 'ENTER_KEY': return `    page.keyboard.press("Enter")`;
+          case 'ESCAPE_KEY': return `    page.keyboard.press("Escape")`;
+          case 'BACK_SPACE_KEY': return `    page.keyboard.press("Backspace")`;
+          case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `    page.keyboard.press("${v}")`;
+          case 'RIGHT_CLICK': return `    page.click("${t}", button="right")  # ${s.text||''}`;
+          case 'REFRESH': return `    page.reload()`;
+          case 'BACK': return `    page.go_back()`;
+          case 'FORWARD': return `    page.go_forward()`;
           default: return `    # ${s.action}: ${t}`;
         }
       }).join('\n');
@@ -1280,13 +1342,18 @@ ${stepsCode}
     if(lang==='java') {
       const jv = steps.map(s=>{
         switch(s.action){
-          case 'navigate': return `        page.navigate("${s.target}");`;
-          case 'click': return `        page.click("${s.target}");`;
-          case 'type': return isRd(s.value) ? `        page.fill("${s.target}", ${rdExprJava(s.value)});` : `        page.fill("${s.target}", "${s.value||''}");`;
-          case 'assert_text': return `        assertThat(page.locator("${s.target}")).containsText("${s.value||''}");`;
-          case 'hover': return `        page.hover("${s.target}");`;
-          case 'key': return `        page.keyboard().press("${s.value||''}");`;
-          case 'rightclick': return `        page.click("${s.target}", new Page.ClickOptions().setButton(MouseButton.RIGHT));`;
+          case 'NAVIGATE_TO': return `        page.navigate("${s.target}");`;
+          case 'CLICK': return `        page.click("${s.target}");`;
+          case 'DOUBLE_CLICK': return `        page.dblclick("${s.target}");`;
+          case 'SEND_KEYS': return isRd(s.value) ? `        page.fill("${s.target}", ${rdExprJava(s.value)});` : `        page.fill("${s.target}", "${s.value||''}");`;
+          case 'CLEAR': return `        page.fill("${s.target}", "");`;
+          case 'ASSERT_CHECK': return `        assertThat(page.locator("${s.target}")).containsText("${s.value||''}");`;
+          case 'MOVE_TO_ELEMENT': case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': return `        page.hover("${s.target}");`;
+          case 'ENTER_KEY': return `        page.keyboard().press("Enter");`;
+          case 'ESCAPE_KEY': return `        page.keyboard().press("Escape");`;
+          case 'BACK_SPACE_KEY': return `        page.keyboard().press("Backspace");`;
+          case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `        page.keyboard().press("${s.value||''}");`;
+          case 'RIGHT_CLICK': return `        page.click("${s.target}", new Page.ClickOptions().setButton(MouseButton.RIGHT));`;
           default: return `        // ${s.action}`;
         }
       }).join('\n');
@@ -1295,13 +1362,18 @@ ${stepsCode}
     if(lang==='csharp') {
       const cs = steps.map(s=>{
         switch(s.action){
-          case 'navigate': return `        await Page.GotoAsync("${s.target}");`;
-          case 'click': return `        await Page.ClickAsync("${s.target}");`;
-          case 'type': return isRd(s.value) ? `        await Page.FillAsync("${s.target}", ${rdExprJS(s.value)});` : `        await Page.FillAsync("${s.target}", "${s.value||''}");`;
-          case 'assert_text': return `        await Expect(Page.Locator("${s.target}")).ToContainTextAsync("${s.value||''}");`;
-          case 'hover': return `        await Page.HoverAsync("${s.target}");`;
-          case 'key': return `        await Page.Keyboard.PressAsync("${s.value||''}");`;
-          case 'rightclick': return `        await Page.ClickAsync("${s.target}", new() { Button = MouseButton.Right });`;
+          case 'NAVIGATE_TO': return `        await Page.GotoAsync("${s.target}");`;
+          case 'CLICK': return `        await Page.ClickAsync("${s.target}");`;
+          case 'DOUBLE_CLICK': return `        await Page.DblClickAsync("${s.target}");`;
+          case 'SEND_KEYS': return isRd(s.value) ? `        await Page.FillAsync("${s.target}", ${rdExprJS(s.value)});` : `        await Page.FillAsync("${s.target}", "${s.value||''}");`;
+          case 'CLEAR': return `        await Page.FillAsync("${s.target}", "");`;
+          case 'ASSERT_CHECK': return `        await Expect(Page.Locator("${s.target}")).ToContainTextAsync("${s.value||''}");`;
+          case 'MOVE_TO_ELEMENT': case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': return `        await Page.HoverAsync("${s.target}");`;
+          case 'ENTER_KEY': return `        await Page.Keyboard.PressAsync("Enter");`;
+          case 'ESCAPE_KEY': return `        await Page.Keyboard.PressAsync("Escape");`;
+          case 'BACK_SPACE_KEY': return `        await Page.Keyboard.PressAsync("Backspace");`;
+          case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `        await Page.Keyboard.PressAsync("${s.value||''}");`;
+          case 'RIGHT_CLICK': return `        await Page.ClickAsync("${s.target}", new() { Button = MouseButton.Right });`;
           default: return `        // ${s.action}`;
         }
       }).join('\n');
@@ -1320,13 +1392,21 @@ ${stepsCode}
       const py = steps.map(s=>{
         const t=s.target, v=s.value||'';
         switch(s.action){
-          case 'navigate': return `        self.driver.get("${t}")`;
-          case 'click': return `        self.driver.find_element(By.CSS_SELECTOR, "${t}").click()`;
-          case 'type': return isRd(s.value) ? `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys(${rdExprPy(s.value)})` : `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys("${v}")`;
-          case 'assert_text': return `        assert "${v}" in self.driver.find_element(By.CSS_SELECTOR, "${t}").text`;
-          case 'hover': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).move_to_element(self.driver.find_element(By.CSS_SELECTOR, "${t}")).perform()`;
-          case 'key': return `        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).send_keys(${v.includes('+') ? v.split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+v.toUpperCase()}).perform()`;
-          case 'rightclick': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).context_click(self.driver.find_element(By.CSS_SELECTOR, "${t}")).perform()`;
+          case 'NAVIGATE_TO': return `        self.driver.get("${t}")`;
+          case 'CLICK': return `        self.driver.find_element(By.CSS_SELECTOR, "${t}").click()`;
+          case 'DOUBLE_CLICK': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).double_click(self.driver.find_element(By.CSS_SELECTOR, "${t}")).perform()`;
+          case 'SEND_KEYS': return isRd(s.value) ? `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys(${rdExprPy(s.value)})` : `        el = self.driver.find_element(By.CSS_SELECTOR, "${t}")\n        el.clear(); el.send_keys("${v}")`;
+          case 'CLEAR': return `        self.driver.find_element(By.CSS_SELECTOR, "${t}").clear()`;
+          case 'ASSERT_CHECK': return `        assert "${v}" in self.driver.find_element(By.CSS_SELECTOR, "${t}").text`;
+          case 'MOVE_TO_ELEMENT': case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).move_to_element(self.driver.find_element(By.CSS_SELECTOR, "${t}")).perform()`;
+          case 'ENTER_KEY': return `        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).send_keys(Keys.ENTER).perform()`;
+          case 'ESCAPE_KEY': return `        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()`;
+          case 'BACK_SPACE_KEY': return `        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).send_keys(Keys.BACK_SPACE).perform()`;
+          case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).send_keys(${v.includes('+') ? v.split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+v.toUpperCase()}).perform()`;
+          case 'RIGHT_CLICK': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).context_click(self.driver.find_element(By.CSS_SELECTOR, "${t}")).perform()`;
+          case 'REFRESH': return `        self.driver.refresh()`;
+          case 'BACK': return `        self.driver.back()`;
+          case 'FORWARD': return `        self.driver.forward()`;
           default: return `        # ${s.action}`;
         }
       }).join('\n');
@@ -1335,12 +1415,20 @@ ${stepsCode}
     if(lang==='java') {
       const jv = steps.map(s=>{
         switch(s.action){
-          case 'navigate': return `        driver.get("${s.target}");`;
-          case 'click': return `        driver.findElement(By.cssSelector("${s.target}")).click();`;
-          case 'type': return isRd(s.value) ? `        driver.findElement(By.cssSelector("${s.target}")).sendKeys(${rdExprJava(s.value)});` : `        driver.findElement(By.cssSelector("${s.target}")).sendKeys("${s.value||''}");`;
-          case 'hover': return `        new org.openqa.selenium.interactions.Actions(driver).moveToElement(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
-          case 'key': return `        new org.openqa.selenium.interactions.Actions(driver).sendKeys(${(s.value||'').includes('+') ? (s.value||'').split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+(s.value||'').toUpperCase()}).perform();`;
-          case 'rightclick': return `        new org.openqa.selenium.interactions.Actions(driver).contextClick(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
+          case 'NAVIGATE_TO': return `        driver.get("${s.target}");`;
+          case 'CLICK': return `        driver.findElement(By.cssSelector("${s.target}")).click();`;
+          case 'DOUBLE_CLICK': return `        new org.openqa.selenium.interactions.Actions(driver).doubleClick(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
+          case 'SEND_KEYS': return isRd(s.value) ? `        driver.findElement(By.cssSelector("${s.target}")).sendKeys(${rdExprJava(s.value)});` : `        driver.findElement(By.cssSelector("${s.target}")).sendKeys("${s.value||''}");`;
+          case 'CLEAR': return `        driver.findElement(By.cssSelector("${s.target}")).clear();`;
+          case 'MOVE_TO_ELEMENT': case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': return `        new org.openqa.selenium.interactions.Actions(driver).moveToElement(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
+          case 'ENTER_KEY': return `        new org.openqa.selenium.interactions.Actions(driver).sendKeys(Keys.ENTER).perform();`;
+          case 'ESCAPE_KEY': return `        new org.openqa.selenium.interactions.Actions(driver).sendKeys(Keys.ESCAPE).perform();`;
+          case 'BACK_SPACE_KEY': return `        new org.openqa.selenium.interactions.Actions(driver).sendKeys(Keys.BACK_SPACE).perform();`;
+          case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `        new org.openqa.selenium.interactions.Actions(driver).sendKeys(${(s.value||'').includes('+') ? (s.value||'').split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+(s.value||'').toUpperCase()}).perform();`;
+          case 'RIGHT_CLICK': return `        new org.openqa.selenium.interactions.Actions(driver).contextClick(driver.findElement(By.cssSelector("${s.target}"))).perform();`;
+          case 'REFRESH': return `        driver.navigate().refresh();`;
+          case 'BACK': return `        driver.navigate().back();`;
+          case 'FORWARD': return `        driver.navigate().forward();`;
           default: return `        // ${s.action}`;
         }
       }).join('\n');
@@ -1536,64 +1624,85 @@ function replaySteps(steps) {
     let errMsg = null;
 
     function sel(selector, step) {
+      // Helper: evaluate XPath on a given root document
+      function xpathFind(root, xpath) {
+        try {
+          const result = root.evaluate(xpath, root, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+          return result.singleNodeValue;
+        } catch(e) { return null; }
+      }
+
+      // Helper: querySelector with error handling
+      function cssFind(root, css) {
+        try { return root.querySelector(css); } catch(e) { return null; }
+      }
+
+      // Determine if selector is XPath (starts with / or //)
+      const isXPath = selector.startsWith('/');
+
+      // Pick the right finder based on selector type
+      const find = isXPath ? xpathFind : cssFind;
+
       // Handle Playwright-style :has-text() pseudo-selector (not valid CSS)
-      const hasTextMatch = selector.match(/^(.+?):has-text\("(.+?)"\)$/);
-      if (hasTextMatch) {
-        const cssBase = hasTextMatch[1];
-        const searchText = hasTextMatch[2];
-        function findByText(root) {
-          try {
-            const candidates = root.querySelectorAll(cssBase);
-            for (const c of candidates) {
-              if ((c.textContent || '').trim().includes(searchText)) return c;
+      if (!isXPath) {
+        const hasTextMatch = selector.match(/^(.+?):has-text\("(.+?)"\)$/);
+        if (hasTextMatch) {
+          const cssBase = hasTextMatch[1];
+          const searchText = hasTextMatch[2];
+          function findByText(root) {
+            try {
+              const candidates = root.querySelectorAll(cssBase);
+              for (const c of candidates) {
+                if ((c.textContent || '').trim().includes(searchText)) return c;
+              }
+            } catch(e) {}
+            return null;
+          }
+          if (step && step.iframe && step.iframeSelector) {
+            const iframe = cssFind(document, step.iframeSelector);
+            if (iframe && iframe.contentDocument) {
+              const r = findByText(iframe.contentDocument);
+              if (r) return r;
             }
-          } catch(e) {}
+          }
+          const topResult = findByText(document);
+          if (topResult) return topResult;
+          const iframes = document.querySelectorAll('iframe');
+          for (const f of iframes) {
+            try {
+              if (f.contentDocument) { const r = findByText(f.contentDocument); if (r) return r; }
+            } catch(e) {}
+          }
           return null;
         }
-        // Check iframe context if needed
-        if (step && step.iframe && step.iframeSelector) {
-          const iframe = document.querySelector(step.iframeSelector);
-          if (iframe && iframe.contentDocument) {
-            const r = findByText(iframe.contentDocument);
-            if (r) return r;
-          }
-        }
-        const topResult = findByText(document);
-        if (topResult) return topResult;
-        const iframes = document.querySelectorAll('iframe');
-        for (const f of iframes) {
-          try {
-            if (f.contentDocument) { const r = findByText(f.contentDocument); if (r) return r; }
-          } catch(e) {}
-        }
-        return null;
       }
+
+      // XPath contains(text(),...) is already handled natively by document.evaluate
 
       // If the step came from an iframe, search inside that iframe's document
       if (step && step.iframe && step.iframeSelector) {
-        const iframe = document.querySelector(step.iframeSelector);
+        const iframe = cssFind(document, step.iframeSelector);
         if (iframe && iframe.contentDocument) {
-          return iframe.contentDocument.querySelector(selector);
+          return find(iframe.contentDocument, selector);
         }
-        // Fallback: try all iframes
         const iframes = document.querySelectorAll('iframe');
         for (const f of iframes) {
           try {
-            const found = f.contentDocument && f.contentDocument.querySelector(selector);
+            const found = f.contentDocument && find(f.contentDocument, selector);
             if (found) return found;
-          } catch(e) { /* cross-origin */ }
+          } catch(e) {}
         }
       }
       // Try top-level first
-      const topEl = document.querySelector(selector);
+      const topEl = find(document, selector);
       if (topEl) return topEl;
       // Fallback: search all iframes even if step doesn't have iframe flag
       const iframes = document.querySelectorAll('iframe');
       for (const f of iframes) {
         try {
-          const found = f.contentDocument && f.contentDocument.querySelector(selector);
+          const found = f.contentDocument && find(f.contentDocument, selector);
           if (found) return found;
-        } catch(e) { /* cross-origin */ }
+        } catch(e) {}
       }
       return null;
     }
@@ -1652,26 +1761,79 @@ function replaySteps(steps) {
       return v;
     }
 
+    async function waitForEl(selector, step, timeoutMs) {
+      const deadline = Date.now() + (timeoutMs || 10000);
+      let el = sel(selector, step);
+      while (!el && Date.now() < deadline) {
+        await wait(300);
+        el = sel(selector, step);
+      }
+      return el;
+    }
+
     async function tryStep(s) {
-      const el = sel(s.target, s);
+      const skipWait = ['NAVIGATE_TO','REFRESH','BACK','FORWARD','CLOSE','QUIT','DEFAULT_FRAME','GET_CURRENT_URL','GET_TITLE','GET_PAGE_SOURCE','CUSTOM_JS'];
+      const el = !skipWait.includes(s.action) ? await waitForEl(s.target, s, 10000) : null;
+
+      // Helper for keyboard replay
+      function parseKeyCombo(combo) {
+        const parts = (combo || '').split('+');
+        const mainKey = parts[parts.length - 1];
+        const mods = { ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
+        for (let p = 0; p < parts.length - 1; p++) {
+          const m = parts[p].toLowerCase();
+          if (m === 'control') { mods.ctrlKey = true; mods.metaKey = true; }
+          if (m === 'alt') mods.altKey = true;
+          if (m === 'shift') mods.shiftKey = true;
+        }
+        return { mainKey, mods };
+      }
+
       switch (s.action) {
-        case 'navigate':
+        case 'NAVIGATE_TO':
           if (location.href !== s.target) {
             location.href = s.target;
             await wait(1200);
           }
           break;
-        case 'click':
+        case 'REFRESH':
+          location.reload();
+          await wait(1200);
+          break;
+        case 'BACK':
+          history.back();
+          await wait(800);
+          break;
+        case 'FORWARD':
+          history.forward();
+          await wait(800);
+          break;
+        case 'CLICK':
           if (!el) throw new Error('Element not found: ' + s.target);
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(150);
           el.click();
           await wait(300);
           break;
-        case 'type':
+        case 'DOUBLE_CLICK':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(150);
+          el.dispatchEvent(new MouseEvent('dblclick', { bubbles:true, cancelable:true }));
+          await wait(300);
+          break;
+        case 'RIGHT_CLICK':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(200);
+          el.dispatchEvent(new MouseEvent('contextmenu', { bubbles:true, cancelable:true, button:2 }));
+          await wait(200);
+          break;
+        case 'SEND_KEYS':
           if (!el) throw new Error('Element not found: ' + s.target);
           el.focus();
           const _tv = resolveValue(s.value || '');
           if (s.contenteditable || (el.getAttribute && el.getAttribute('contenteditable') === 'true') || el.isContentEditable) {
-            // Contenteditable element (rich text editor body)
             el.innerText = _tv;
             el.dispatchEvent(new Event('input', { bubbles:true }));
           } else {
@@ -1681,151 +1843,247 @@ function replaySteps(steps) {
           }
           await wait(150);
           break;
-        case 'select':
+        case 'CLEAR':
           if (!el) throw new Error('Element not found: ' + s.target);
-          el.value = s.value || '';
-          el.dispatchEvent(new Event('change', { bubbles:true }));
-          await wait(150);
+          el.focus();
+          if (el.isContentEditable || (el.getAttribute && el.getAttribute('contenteditable') === 'true')) {
+            el.innerText = '';
+            el.dispatchEvent(new Event('input', { bubbles:true }));
+          } else {
+            el.value = '';
+            el.dispatchEvent(new Event('input', { bubbles:true }));
+            el.dispatchEvent(new Event('change', { bubbles:true }));
+          }
+          await wait(100);
           break;
-        case 'assert_text':
+        case 'ASSERT_CHECK':
           if (!el) throw new Error('Assert target not found: ' + s.target);
           if (!el.textContent.includes(s.value)) {
             throw new Error('Assert failed: expected "' + s.value + '" in ' + s.target);
           }
           break;
-        case 'scroll_to': {
+        case 'GET_TEXT':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          // Store text for later use
+          s._result = (el.innerText || el.textContent || '').trim();
+          break;
+        case 'GET_ATTRIBUTE':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          s._result = el.getAttribute(s.value || '') || '';
+          break;
+        case 'GET_ELEMENT_SIZE':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          const rect = el.getBoundingClientRect();
+          s._result = { width: Math.round(rect.width), height: Math.round(rect.height) };
+          break;
+        case 'IS_DISPLAYED':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          s._result = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+          break;
+        case 'IS_ENABLED':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          s._result = !el.disabled;
+          break;
+        case 'IS_SELECTED':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          s._result = el.checked || el.selected || false;
+          break;
+        case 'GET_CLASS':
+          if (!el) throw new Error('Element not found: ' + s.target);
+          s._result = el.className || '';
+          break;
+        case 'GET_CURRENT_URL':
+          s._result = location.href;
+          break;
+        case 'GET_TITLE':
+          s._result = document.title;
+          break;
+        case 'GET_PAGE_SOURCE':
+          s._result = document.documentElement.outerHTML;
+          break;
+        case 'SCROLL_TO_ELEMENT': {
           const maxAttempts = s.scrollAttempts || 20;
           const timeout = s.scrollTimeout || 10000;
           const interval = Math.max(200, Math.floor(timeout / maxAttempts));
-          let found = null;
-          for (let a = 0; a < maxAttempts; a++) {
-            found = sel(s.target, s);
-            if (found) break;
-            // Scroll in the appropriate context
-            if (s.iframe && s.iframeSelector) {
-              const iframe = document.querySelector(s.iframeSelector);
-              if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.scrollBy(0, 300);
+          let found = el;
+          if (!found) {
+            for (let a = 0; a < maxAttempts; a++) {
+              found = sel(s.target, s);
+              if (found) break;
+              if (s.iframe && s.iframeSelector) {
+                const iframe = document.querySelector(s.iframeSelector);
+                if (iframe && iframe.contentWindow) {
+                  iframe.contentWindow.scrollBy(0, 300);
+                } else {
+                  window.scrollBy(0, 300);
+                }
               } else {
                 window.scrollBy(0, 300);
               }
-            } else {
-              window.scrollBy(0, 300);
+              await wait(interval);
             }
-            await wait(interval);
           }
-          if (!found) throw new Error('scroll_to: Element not found after ' + maxAttempts + ' attempts: ' + s.target);
+          if (!found) throw new Error('SCROLL_TO_ELEMENT: not found after ' + maxAttempts + ' attempts: ' + s.target);
           found.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(400);
           break;
         }
-        case 'hover': {
-          let hEl = el;
-          if (!hEl) {
-            // Retry up to 5s waiting for hover target to appear in the DOM
-            for (let attempt = 0; attempt < 10; attempt++) {
-              await wait(500);
-              hEl = sel(s.target, s);
-              if (hEl) break;
+        case 'SCROLL_TO_ELEMENT_AND_CLICK': {
+          const maxAttempts2 = s.scrollAttempts || 20;
+          const timeout2 = s.scrollTimeout || 10000;
+          const interval2 = Math.max(200, Math.floor(timeout2 / maxAttempts2));
+          let found2 = el;
+          if (!found2) {
+            for (let a = 0; a < maxAttempts2; a++) {
+              found2 = sel(s.target, s);
+              if (found2) break;
+              window.scrollBy(0, 300);
+              await wait(interval2);
             }
           }
-          if (!hEl) throw new Error('Hover target not found: ' + s.target);
-          hEl.scrollIntoView({ behavior:'smooth', block:'center' });
-          await wait(200);
-          hEl.dispatchEvent(new MouseEvent('mouseenter', { bubbles:true, cancelable:true }));
-          hEl.dispatchEvent(new MouseEvent('mouseover', { bubbles:true, cancelable:true }));
-          hEl.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, cancelable:true }));
-          await wait(600);
+          if (!found2) throw new Error('SCROLL_TO_ELEMENT_AND_CLICK: not found: ' + s.target);
+          found2.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(300);
+          found2.click();
+          await wait(300);
           break;
         }
-        case 'key': {
-          const combo = s.value || '';
-          const parts = combo.split('+');
-          const mainKey = parts[parts.length - 1];
-          const mods = { ctrlKey: false, altKey: false, shiftKey: false, metaKey: false };
-          for (let p = 0; p < parts.length - 1; p++) {
-            const m = parts[p].toLowerCase();
-            if (m === 'control') { mods.ctrlKey = true; mods.metaKey = true; }
-            if (m === 'alt') mods.altKey = true;
-            if (m === 'shift') mods.shiftKey = true;
+        case 'MOVE_TO_ELEMENT':
+        case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': {
+          if (!el) throw new Error('Element not found: ' + s.target);
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(200);
+          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles:true, cancelable:true }));
+          el.dispatchEvent(new MouseEvent('mouseover', { bubbles:true, cancelable:true }));
+          el.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, cancelable:true }));
+          await wait(600);
+          if (s.action === 'MOVE_TO_ELEMENT') {
+            el.click();
+            await wait(300);
           }
-          const target = el || document.activeElement || document.body;
-
-          // For Enter: trigger click or form submit for native behavior
-          if (mainKey === 'Enter') {
-            target.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', code:'Enter', keyCode:13, bubbles:true, cancelable:true, ...mods }));
-            if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.getAttribute('role') === 'button') {
-              target.click();
-            } else if (target.form) {
-              target.form.requestSubmit ? target.form.requestSubmit() : target.form.submit();
-            } else if (target.tagName === 'INPUT') {
-              target.click();
+          break;
+        }
+        case 'MOVE_BY_OFFSET': {
+          const ox = parseInt(s.value?.split(',')[0]) || 0;
+          const oy = parseInt(s.value?.split(',')[1]) || 0;
+          const target = el || document.elementFromPoint(ox, oy);
+          if (target) {
+            target.dispatchEvent(new MouseEvent('mousemove', { clientX:ox, clientY:oy, bubbles:true }));
+          }
+          await wait(200);
+          break;
+        }
+        case 'ENTER_KEY': {
+          const target_e = el || document.activeElement || document.body;
+          target_e.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', code:'Enter', keyCode:13, bubbles:true, cancelable:true }));
+          if (target_e.tagName === 'BUTTON' || target_e.tagName === 'A' || target_e.getAttribute('role') === 'button') {
+            target_e.click();
+          } else if (target_e.form) {
+            target_e.form.requestSubmit ? target_e.form.requestSubmit() : target_e.form.submit();
+          } else if (target_e.tagName === 'INPUT') {
+            target_e.click();
+          }
+          target_e.dispatchEvent(new KeyboardEvent('keyup', { key:'Enter', code:'Enter', keyCode:13, bubbles:true }));
+          await wait(150);
+          break;
+        }
+        case 'ESCAPE_KEY': {
+          const target_esc = el || document.activeElement || document.body;
+          target_esc.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, bubbles:true, cancelable:true }));
+          target_esc.blur();
+          target_esc.dispatchEvent(new KeyboardEvent('keyup', { key:'Escape', code:'Escape', keyCode:27, bubbles:true }));
+          await wait(150);
+          break;
+        }
+        case 'BACK_SPACE_KEY': {
+          const target_bs = el || document.activeElement || document.body;
+          const mainK = (s.value || 'Backspace').includes('Delete') ? 'Delete' : 'Backspace';
+          if (target_bs.tagName === 'INPUT' || target_bs.tagName === 'TEXTAREA') {
+            target_bs.dispatchEvent(new KeyboardEvent('keydown', { key:mainK, bubbles:true, cancelable:true }));
+            const start = target_bs.selectionStart || 0;
+            const end = target_bs.selectionEnd || 0;
+            const val = target_bs.value || '';
+            if (start !== end) {
+              target_bs.value = val.slice(0, start) + val.slice(end);
+              target_bs.selectionStart = target_bs.selectionEnd = start;
+            } else if (mainK === 'Backspace' && start > 0) {
+              target_bs.value = val.slice(0, start - 1) + val.slice(start);
+              target_bs.selectionStart = target_bs.selectionEnd = start - 1;
+            } else if (mainK === 'Delete' && start < val.length) {
+              target_bs.value = val.slice(0, start) + val.slice(start + 1);
+              target_bs.selectionStart = target_bs.selectionEnd = start;
             }
-            target.dispatchEvent(new KeyboardEvent('keyup', { key:'Enter', code:'Enter', keyCode:13, bubbles:true, ...mods }));
-          }
-          // For Tab: move focus to next/previous focusable element
-          else if (mainKey === 'Tab') {
-            target.dispatchEvent(new KeyboardEvent('keydown', { key:'Tab', code:'Tab', keyCode:9, bubbles:true, cancelable:true, ...mods }));
-            const focusable = Array.from(document.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'));
-            const idx = focusable.indexOf(target);
-            if (idx !== -1) {
-              const next = mods.shiftKey ? focusable[idx - 1] || focusable[focusable.length - 1] : focusable[idx + 1] || focusable[0];
-              if (next) next.focus();
-            }
-            target.dispatchEvent(new KeyboardEvent('keyup', { key:'Tab', code:'Tab', keyCode:9, bubbles:true, ...mods }));
-          }
-          // For Escape: blur the focused element and dispatch
-          else if (mainKey === 'Escape') {
-            target.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, bubbles:true, cancelable:true, ...mods }));
-            target.blur();
-            target.dispatchEvent(new KeyboardEvent('keyup', { key:'Escape', code:'Escape', keyCode:27, bubbles:true, ...mods }));
-          }
-          // For Backspace/Delete in input fields
-          else if (mainKey === 'Backspace' || mainKey === 'Delete') {
-            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-              target.dispatchEvent(new KeyboardEvent('keydown', { key:mainKey, bubbles:true, cancelable:true, ...mods }));
-              const start = target.selectionStart || 0;
-              const end = target.selectionEnd || 0;
-              const val = target.value || '';
-              if (start !== end) {
-                target.value = val.slice(0, start) + val.slice(end);
-                target.selectionStart = target.selectionEnd = start;
-              } else if (mainKey === 'Backspace' && start > 0) {
-                target.value = val.slice(0, start - 1) + val.slice(start);
-                target.selectionStart = target.selectionEnd = start - 1;
-              } else if (mainKey === 'Delete' && start < val.length) {
-                target.value = val.slice(0, start) + val.slice(start + 1);
-                target.selectionStart = target.selectionEnd = start;
-              }
-              target.dispatchEvent(new Event('input', { bubbles:true }));
-              target.dispatchEvent(new KeyboardEvent('keyup', { key:mainKey, bubbles:true, ...mods }));
-            } else {
-              target.dispatchEvent(new KeyboardEvent('keydown', { key:mainKey, bubbles:true, cancelable:true, ...mods }));
-              target.dispatchEvent(new KeyboardEvent('keyup', { key:mainKey, bubbles:true, ...mods }));
-            }
-          }
-          // For Ctrl+A: select all text in input
-          else if (mainKey === 'a' && mods.ctrlKey) {
-            target.dispatchEvent(new KeyboardEvent('keydown', { key:'a', bubbles:true, cancelable:true, ...mods }));
-            if (target.select) target.select();
-            target.dispatchEvent(new KeyboardEvent('keyup', { key:'a', bubbles:true, ...mods }));
-          }
-          // All other keys: dispatch events
-          else {
-            target.dispatchEvent(new KeyboardEvent('keydown', { key: mainKey, bubbles:true, cancelable:true, ...mods }));
-            target.dispatchEvent(new KeyboardEvent('keyup',   { key: mainKey, bubbles:true, ...mods }));
+            target_bs.dispatchEvent(new Event('input', { bubbles:true }));
+            target_bs.dispatchEvent(new KeyboardEvent('keyup', { key:mainK, bubbles:true }));
+          } else {
+            target_bs.dispatchEvent(new KeyboardEvent('keydown', { key:mainK, bubbles:true, cancelable:true }));
+            target_bs.dispatchEvent(new KeyboardEvent('keyup', { key:mainK, bubbles:true }));
           }
           await wait(150);
           break;
         }
-        case 'rightclick': {
-          const rEl = el || document.querySelector(s.target);
-          if (rEl) {
-            rEl.scrollIntoView({ behavior:'smooth', block:'center' });
-            await wait(200);
-            rEl.dispatchEvent(new MouseEvent('contextmenu', { bubbles:true, cancelable:true, button:2 }));
+        case 'CUT_COPY_PASTE_SELECTALL': {
+          const { mainKey: ck, mods: cmods } = parseKeyCombo(s.value);
+          const target_ccp = el || document.activeElement || document.body;
+          target_ccp.dispatchEvent(new KeyboardEvent('keydown', { key:ck, bubbles:true, cancelable:true, ...cmods }));
+          if (ck === 'a' && cmods.ctrlKey && target_ccp.select) target_ccp.select();
+          target_ccp.dispatchEvent(new KeyboardEvent('keyup', { key:ck, bubbles:true, ...cmods }));
+          await wait(150);
+          break;
+        }
+        case 'SHORTCUT_KEY': {
+          const { mainKey: sk, mods: smods } = parseKeyCombo(s.value);
+          const target_sk = el || document.activeElement || document.body;
+          if (sk === 'Tab') {
+            target_sk.dispatchEvent(new KeyboardEvent('keydown', { key:'Tab', code:'Tab', keyCode:9, bubbles:true, cancelable:true, ...smods }));
+            const focusable = Array.from(document.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'));
+            const idx = focusable.indexOf(target_sk);
+            if (idx !== -1) {
+              const next = smods.shiftKey ? focusable[idx - 1] || focusable[focusable.length - 1] : focusable[idx + 1] || focusable[0];
+              if (next) next.focus();
+            }
+            target_sk.dispatchEvent(new KeyboardEvent('keyup', { key:'Tab', code:'Tab', keyCode:9, bubbles:true, ...smods }));
+          } else {
+            target_sk.dispatchEvent(new KeyboardEvent('keydown', { key:sk, bubbles:true, cancelable:true, ...smods }));
+            target_sk.dispatchEvent(new KeyboardEvent('keyup', { key:sk, bubbles:true, ...smods }));
           }
-          await wait(200);
+          await wait(150);
+          break;
+        }
+        case 'SWITCH_TO_FRAME': {
+          // Frame switching is handled by sel() when step.iframe is true
+          break;
+        }
+        case 'DEFAULT_FRAME': {
+          // Return to top-level context — no-op in DOM replay (sel handles it)
+          break;
+        }
+        case 'DRAG_AND_DROP': {
+          if (!el) throw new Error('Element not found: ' + s.target);
+          const dropEl = s.value ? sel(s.value, s) : null;
+          if (!dropEl) throw new Error('Drop target not found: ' + s.value);
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles:true }));
+          el.dispatchEvent(new DragEvent('dragstart', { bubbles:true }));
+          dropEl.dispatchEvent(new DragEvent('dragenter', { bubbles:true }));
+          dropEl.dispatchEvent(new DragEvent('dragover', { bubbles:true }));
+          dropEl.dispatchEvent(new DragEvent('drop', { bubbles:true }));
+          el.dispatchEvent(new DragEvent('dragend', { bubbles:true }));
+          await wait(300);
+          break;
+        }
+        case 'CUSTOM_JS': {
+          try { eval(s.value); } catch(e) { throw new Error('CUSTOM_JS error: ' + e.message); }
+          await wait(100);
+          break;
+        }
+        case 'STORE_VALUES': {
+          if (!el) throw new Error('Element not found: ' + s.target);
+          s._result = el.value || el.innerText || el.textContent || '';
+          break;
+        }
+        case 'GET_LAST_ID_FROM_URL': {
+          const urlParts = location.href.split('/');
+          s._result = urlParts[urlParts.length - 1] || '';
           break;
         }
       }
@@ -1833,9 +2091,10 @@ function replaySteps(steps) {
 
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
-      if (s.action === 'navigate') { log.push({ i, action:s.action, ok:true }); continue; }
+      if (s.action === 'NAVIGATE_TO') { log.push({ i, action:s.action, ok:true }); continue; }
       try {
         await tryStep(s);
+        if (s.sleep > 0) await wait(s.sleep);
         log.push({ i, action:s.action, target:s.target, ok:true });
       } catch(e) {
         errMsg = 'Step ' + (i+1) + ' (' + s.action + ' ' + s.target + '): ' + e.message;
@@ -2090,9 +2349,10 @@ async function zohoExportTask(msg) {
     if (stepsJson) {
       try {
         const blob = new Blob([stepsJson], { type: 'application/json' });
-        const result = await uploadAndAttach(blob, 'steps.json');
+        const jsonFilename = (taskName || 'steps').replace(/[^a-zA-Z0-9_\- ]/g, '_').trim() + '.json';
+        const result = await uploadAndAttach(blob, jsonFilename);
         attachResults.push(result);
-      } catch(e) { attachResults.push({ name: 'steps.json', ok: false, err: e.message }); }
+      } catch(e) { attachResults.push({ name: taskName + '.json', ok: false, err: e.message }); }
     }
 
     if (codeText) {

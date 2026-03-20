@@ -82,8 +82,59 @@ async function syncResultToGodMode(result) {
   return r;
 }
 
-const ACT_ICO = { navigate:'🔗', click:'👆', type:'✏', select:'📋', assert_text:'✅', key:'⌨', rightclick:'🖱', scroll_to:'📜', hover:'🫳', default:'⚡' };
-const ACT_CLS = { navigate:'nav', click:'clk', type:'typ', select:'sel2', assert_text:'ast' };
+const ACT_ICO = { NAVIGATE_TO:'🔗', CLICK:'👆', DOUBLE_CLICK:'👆', SEND_KEYS:'✏', CLEAR:'🧹', ASSERT_CHECK:'✅', ENTER_KEY:'⏎', ESCAPE_KEY:'⎋', BACK_SPACE_KEY:'⌫', SHORTCUT_KEY:'⌨', CUT_COPY_PASTE_SELECTALL:'📋', RIGHT_CLICK:'🖱', SCROLL_TO_ELEMENT:'📜', SCROLL_TO_ELEMENT_AND_CLICK:'📜', MOVE_TO_ELEMENT:'🫳', MOVE_TO_ELEMENT_WITHOUT_CLICK:'🫳', MOVE_BY_OFFSET:'↔', SWITCH_TO_FRAME:'🖼', DEFAULT_FRAME:'🖼', DRAG_AND_DROP:'🔀', HOLD_AND_MOVE:'✊', REFRESH:'🔄', BACK:'⬅', FORWARD:'➡', CLOSE:'✕', QUIT:'⏏', GET_TEXT:'📄', GET_ATTRIBUTE:'🏷', GET_ELEMENT_SIZE:'📐', GET_CURRENT_URL:'🌐', GET_TITLE:'📰', GET_PAGE_SOURCE:'📃', GET_CLASS:'🎨', IS_DISPLAYED:'👁', IS_ENABLED:'✓', IS_SELECTED:'☑', STORE_VALUES:'💾', GET_LAST_ID_FROM_URL:'🔢', CUSTOM_JS:'⚡', CONDITIONS:'🔀', ASSOCIATE_ACTION_GROUP:'📦', ASSOCIATE_API:'🔌', SWITCH_TABS:'🔀', CLOSE_TABS:'✕', GET:'🌐', SHIFT_CONTROL_SELECT:'⇧', HOLD_CONTROL_SELECT:'⌃', COMPARE_PDF_CONTENT:'📑', COMPARE_PDF_PIXELS:'📑', default:'⚡' };
+const ACT_CLS = { NAVIGATE_TO:'nav', CLICK:'clk', SEND_KEYS:'typ', ASSERT_CHECK:'ast', DOUBLE_CLICK:'clk', RIGHT_CLICK:'clk' };
+const ACT_DESC = {
+  GET_CURRENT_URL: 'Retrieves the current URL of the browser.',
+  GET_TITLE: 'Gets the title of the current web page.',
+  GET_PAGE_SOURCE: 'Fetches the complete HTML source of the current page.',
+  GET_CLASS: 'Returns the class attribute value of a web element.',
+  NAVIGATE_TO: 'Navigates the browser to a specified URL.',
+  REFRESH: 'Refreshes the current web page.',
+  BACK: 'Navigates back to the previous page in browser history.',
+  FORWARD: 'Navigates forward to the next page in browser history.',
+  CLOSE: 'Closes the current browser window.',
+  QUIT: 'Closes all browser windows and ends the WebDriver session.',
+  CLICK: 'Performs a click action on a web element.',
+  RIGHT_CLICK: 'Performs a right-click (context click) on an element.',
+  DOUBLE_CLICK: 'Performs a double-click on an element.',
+  SEND_KEYS: 'Inputs text or keystrokes into a web element.',
+  CLEAR: 'Clears the text from an input field.',
+  GET_ELEMENT_SIZE: 'Retrieves the height and width of an element.',
+  GET_ATTRIBUTE: 'Gets the value of a specified attribute of an element.',
+  GET_TEXT: 'Retrieves the visible text of a web element.',
+  MOVE_TO_ELEMENT: 'Moves the mouse cursor to the specified element.',
+  CUT_COPY_PASTE_SELECTALL: 'Performs keyboard actions like cut, copy, paste, or select all.',
+  SHORTCUT_KEY: 'Executes a keyboard shortcut action.',
+  SHIFT_CONTROL_SELECT: 'Selects multiple elements using Shift or Control keys.',
+  HOLD_CONTROL_SELECT: 'Selects multiple items by holding the Control key.',
+  MOVE_TO_ELEMENT_WITHOUT_CLICK: 'Moves the cursor to an element without performing a click.',
+  MOVE_BY_OFFSET: 'Moves the mouse by a specified offset from its current position.',
+  SCROLL_TO_ELEMENT: 'Scrolls the page until the element is visible.',
+  SCROLL_TO_ELEMENT_AND_CLICK: 'Scrolls to the element and performs a click.',
+  SWITCH_TO_FRAME: 'Switches the driver context to a specified frame.',
+  SWITCH_TABS: 'Switches control between browser tabs.',
+  CLOSE_TABS: 'Closes one or more browser tabs.',
+  DEFAULT_FRAME: 'Switches context back to the main document from a frame.',
+  GET: 'Loads a new web page using the given URL.',
+  IS_DISPLAYED: 'Checks if the element is visible on the page.',
+  IS_ENABLED: 'Checks if the element is enabled for interaction.',
+  IS_SELECTED: 'Checks if the element is selected (for checkboxes, radio buttons).',
+  DRAG_AND_DROP: 'Drags an element and drops it onto another element.',
+  HOLD_AND_MOVE: 'Clicks and holds an element, then moves it to another location.',
+  COMPARE_PDF_CONTENT: 'Compares textual content between two PDF files.',
+  COMPARE_PDF_PIXELS: 'Compares visual differences between two PDF files.',
+  CUSTOM_JS: 'Executes custom JavaScript in the browser.',
+  ESCAPE_KEY: 'Simulates pressing the Escape key.',
+  ENTER_KEY: 'Simulates pressing the Enter key.',
+  BACK_SPACE_KEY: 'Simulates pressing the Backspace key.',
+  CONDITIONS: 'Applies conditional logic during test execution.',
+  ASSERT_CHECK: 'Validates expected vs actual results.',
+  STORE_VALUES: 'Stores values for later use in the test.',
+  GET_LAST_ID_FROM_URL: 'Extracts the last ID or parameter from the URL.',
+  ASSOCIATE_ACTION_GROUP: 'Links the current step with a predefined action group.',
+  ASSOCIATE_API: 'Associates an API call with the current test step.'
+};
 
 // ── Random data ──
 const XSS_PAYLOADS = [
@@ -316,7 +367,7 @@ function bindAll() {
   $('seAction').addEventListener('change', () => {
     const ask = $('seRandomAsk');
     const applied = $('seRandomApplied');
-    if ($('seAction').value === 'type') {
+    if ($('seAction').value === 'SEND_KEYS') {
       if (isRandomValue($('seValue').value)) {
         ask.style.display = 'none';
         applied.style.display = 'flex';
@@ -328,6 +379,8 @@ function bindAll() {
       }
     }
     else { ask.style.display = 'none'; applied.style.display = 'none'; $('seValue').style.display = ''; }
+    // Update action description
+    const d = $('seActionDesc'); if (d) d.textContent = ACT_DESC[$('seAction').value] || '';
   });
   $('seRandomYes').addEventListener('click', openRandomModal);
   $('seRandomNo').addEventListener('click', () => { $('seRandomAsk').style.display = 'none'; $('seValue').style.display = ''; });
@@ -472,11 +525,12 @@ function onBgMsg(msg) {
   // Locator picked from inspect mode
   if (msg.type === 'LOCATOR_SELECTED' && msg.locator) {
     const el = $('locatorResult');
+    const sleepMs = msg.locator.sleep || msg.sleep || 0;
     if (el) {
       el.style.display = 'block';
       el.innerHTML =
         '<div style="font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Selected Locator</div>'
-        + '<div style="font-size:10px;color:var(--blue);font-weight:600;margin-bottom:2px">' + msg.locator.type + ' (' + msg.locator.strategy + ')</div>'
+        + '<div style="font-size:10px;color:var(--blue);font-weight:600;margin-bottom:2px">' + msg.locator.type + ' (' + msg.locator.strategy + ')' + (sleepMs ? ' &middot; ⏱ ' + sleepMs + 'ms' : '') + '</div>'
         + '<div style="font-size:11px;font-family:DM Mono,monospace;color:var(--tx);background:var(--sf3);padding:6px 8px;border-radius:6px;word-break:break-all;cursor:pointer" title="Click to copy" id="locatorValCopy">' + msg.locator.value + '</div>';
       const copyEl = $('locatorValCopy');
       if (copyEl) {
@@ -644,13 +698,14 @@ function renderSteps() {
     } else if (s.value) {
       val = '<div class="sv">"' + s.value.slice(0,40) + '"</div>';
     }
+    if (s.sleep) val += '<div class="sv" style="color:var(--t2);font-size:11px">⏱ ' + s.sleep + 'ms</div>';
     return '<div class="step ' + cls + '" data-idx="' + i + '" draggable="true">'
       + '<div class="sdrag" title="Drag to reorder">⠿</div>'
       + '<div class="sn">' + (i+1) + '</div>'
       + '<span class="si">' + ico + '</span>'
       + '<div class="sb" style="cursor:pointer" data-action="editStep" data-id="' + i + '">'
-        + '<div class="sa">' + s.action + '</div>'
-        + '<div class="st" title="Click to edit">' + tgt + '</div>' + val
+        + '<div class="sa" title="' + (ACT_DESC[s.action] || '') + '">' + s.action + '</div>'
+        + '<div class="st">' + tgt + '</div>' + val
       + '</div>'
       + '<button class="sdel" data-action="delStep" data-id="' + i + '">✕</button>'
       + '</div>';
@@ -666,10 +721,14 @@ function editStep(i) {
   $('seAction').value  = s.action;
   $('seTarget').value  = s.target || s.url || '';
   $('seValue').value   = s.value  || '';
+  $('seSleep').value   = s.sleep  || 0;
+  // Show action description
+  const descEl = $('seActionDesc');
+  if (descEl) descEl.textContent = ACT_DESC[s.action] || '';
   G._editStepIdx = i;
   const ask     = $('seRandomAsk');
   const applied = $('seRandomApplied');
-  if (s.action === 'type') {
+  if (s.action === 'SEND_KEYS') {
     if (isRandomValue(s.value)) {
       // Random data already applied — show applied state
       ask.style.display = 'none';
@@ -697,8 +756,9 @@ function applyStepEdit() {
   const s = G.live.steps[i];
   s.action = $('seAction').value || s.action;
   s.target = $('seTarget').value || s.target;
-  s.url    = s.action === 'navigate' ? $('seTarget').value : s.url;
+  s.url    = s.action === 'NAVIGATE_TO' ? $('seTarget').value : s.url;
   s.value  = $('seValue').value;
+  s.sleep  = parseInt($('seSleep').value) || 0;
   closeModal('stepEditModal');
   renderSteps();
   // Persist to lastStoppedRec so popup reload reflects edits
@@ -845,7 +905,7 @@ function renderLibrary() {
     let preview = steps.slice(0,4).map((s,i) =>
       '<div class="rprow"><div class="rpn">'+(i+1)+'</div>'
       + '<span style="font-size:12px">'+(ACT_ICO[s.action]||'⚡')+'</span>'
-      + '<span style="font-weight:600;font-size:11.5px">'+s.action+'</span>'
+      + '<span style="font-weight:600;font-size:11.5px" title="'+(ACT_DESC[s.action]||'')+'">'+s.action+'</span>'
       + '<span style="color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:DM Mono,monospace">'+(s.target||s.url||'').slice(0,46)+'</span>'
       + '</div>'
     ).join('');
@@ -1944,7 +2004,7 @@ async function openZohoImportModal() {
   // Search for steps JSON across common field names (may have timestamp in name)
   const stepsAttach = attachments.find(a => {
     const fn = (a.filename || a.name || a.file_name || a.display_name || '').toLowerCase();
-    return fn.startsWith('steps') && fn.endsWith('.json');
+    return fn.endsWith('.json');
   });
 
   if (ar && !ar.ok && ar.error) {
@@ -1957,7 +2017,7 @@ async function openZohoImportModal() {
     _zohoSelectedTask.stepsFileId = stepsAttach.third_party_file_id || '';
   } else if (attachments.length) {
     const names = attachments.map(a => a.filename || a.name || a.file_name || a.display_name || '?').join(', ');
-    $('ziAttachInfo').innerHTML = '<span style="color:#f59e0b">📎 ' + attachments.length + ' attachment(s) found (' + escHtml(names) + ') but no steps.json</span>';
+    $('ziAttachInfo').innerHTML = '<span style="color:#f59e0b">📎 ' + attachments.length + ' attachment(s) found (' + escHtml(names) + ') but no .json file</span>';
   } else {
     $('ziAttachInfo').innerHTML = '<span style="color:var(--t3)">📎 No attachments — task will import without steps</span>';
   }
@@ -2025,7 +2085,7 @@ async function importZohoTask() {
   const stepCount = rec.steps.length;
   st.style.background = 'rgba(34,197,94,.1)';
   st.style.color = '#22c55e';
-  st.textContent = '✓ Imported with ' + stepCount + ' step(s)' + (stepCount ? '' : ' — no steps.json found');
+  st.textContent = '✓ Imported with ' + stepCount + ' step(s)' + (stepCount ? '' : ' — no .json found');
 
   toast('📥 Imported: ' + rec.name + ' (' + stepCount + ' steps)', 'pass');
   setTimeout(() => { closeModal('zohoImportModal'); showPg('library'); }, 1200);
