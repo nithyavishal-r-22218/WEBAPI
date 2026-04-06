@@ -17,6 +17,23 @@ const sv  = (id,v) => { const e=$(id); if(e) e.value = v; };
 const uid = () => 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 const dur = ms => ms < 1000 ? ms + 'ms' : (ms/1000).toFixed(2) + 's';
 
+// ── Animated counter ─────────────────────────────────────────────────────────
+function animateCount(el, to) {
+  if (!el) return;
+  const from = parseInt(el.textContent) || 0;
+  if (from === to) return;
+  const diff = to - from;
+  const steps = Math.min(Math.abs(diff), 20);
+  const dur = 300;
+  let i = 0;
+  const tick = () => {
+    i++;
+    el.textContent = Math.round(from + diff * (i / steps));
+    if (i < steps) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 // ── WEBAPI API sync ─────────────────────────────────────────────────────────
 async function gmPost(path, body) {
   try {
@@ -466,13 +483,13 @@ function bindAll() {
 function onBgMsg(msg) {
   if (msg.type === 'STEP') {
     G.live.steps.push(msg.step);
-    $('hSteps').textContent = msg.total;
+    animateCount($('hSteps'), msg.total);
     renderSteps();
   }
   if (msg.type === 'STEPS_UPDATED') {
     // Full step list replaced (e.g. scroll_to inserted before click)
     G.live.steps = msg.steps;
-    $('hSteps').textContent = msg.total;
+    animateCount($('hSteps'), msg.total);
     renderSteps();
   }
   if (msg.type === 'NET') {
@@ -1030,8 +1047,7 @@ function pickFW(el) {
   el.classList.add('on'); G.genFW = el.dataset.fw;
   const compat = {
     playwright:['javascript','typescript','python','java','csharp'],
-    cypress:['javascript','typescript'], selenium:['javascript','python','java','csharp'],
-    puppeteer:['javascript','typescript'], testcafe:['javascript','typescript'], jest:['javascript','typescript']
+    cypress:['javascript','typescript'], selenium:['javascript','python','java','csharp']
   };
   const ok = compat[G.genFW] || ['javascript'];
   document.querySelectorAll('.lbtn').forEach(b => {
@@ -1434,9 +1450,9 @@ function renderAll() {
 }
 
 function updateCounts() {
-  $('hRecs').textContent      = G.recordings.length;
-  $('hCases').textContent     = G.cases.length;
-  $('hRuns').textContent      = G.results.length;
+  animateCount($('hRecs'), G.recordings.length);
+  animateCount($('hCases'), G.cases.length);
+  animateCount($('hRuns'), G.results.length);
   $('tb-lib').textContent     = G.recordings.length;
   $('tb-tests').textContent   = G.cases.length;
   $('tb-results').textContent = G.results.length;
@@ -1793,7 +1809,7 @@ async function openZohoExportModal() {
   const r = await bg('ZOHO_PROJECTS', { token, portal, dc });
   if (r?.ok) {
     $('zeProject').innerHTML = '<option value="">— Select project —</option>'
-      + (r.projects || []).map(p => '<option value="' + (p.id || p.id_string) + '">' + escHtml(p.name) + '</option>').join('');
+      + (r.projects || []).map(p => '<option value="' + (p.id_string || p.id) + '">' + escHtml(p.name) + '</option>').join('');
   } else {
     $('zeProject').innerHTML = '<option value="">Failed to load projects</option>';
     toast('✗ ' + (r?.error || 'Could not load projects'), 'fail');
@@ -1814,7 +1830,7 @@ async function onZeProjectChange() {
   const r = await bg('ZOHO_TASKLISTS', { token, portal, dc, projectId });
   if (r?.ok) {
     tl.innerHTML = '<option value="">(No tasklist / default)</option>'
-      + (r.tasklists || []).map(t => '<option value="' + (t.id || t.id_string) + '">' + escHtml(t.name) + '</option>').join('');
+      + (r.tasklists || []).map(t => '<option value="' + (t.id_string || t.id) + '">' + escHtml(t.name) + '</option>').join('');
     tl.disabled = false;
   } else {
     tl.innerHTML = '<option value="">Failed to load</option>';
@@ -1863,9 +1879,17 @@ async function doZohoExport() {
     let msg = '✓ Task created: ' + (r.taskName || taskName);
     if (r.attachments?.length) {
       const ok = r.attachments.filter(a => a.ok).length;
-      msg += ' · ' + ok + '/' + r.attachments.length + ' attachments';
+      const total = r.attachments.length;
+      msg += ' · ' + ok + '/' + total + ' attachments';
+      if (ok < total) {
+        const fails = r.attachments.filter(a => !a.ok).map(a => a.name + ': ' + (a.err || '?'));
+        msg += '\n' + fails.join('\n');
+        st.style.background = 'rgba(234,179,8,.12)';
+        st.style.color = '#ca8a04';
+      }
     }
     st.textContent = msg;
+    st.style.whiteSpace = 'pre-wrap';
     toast('📤 Exported to ZP!', 'pass');
   } else {
     st.style.background = 'rgba(239,68,68,.1)';
@@ -1888,7 +1912,7 @@ async function loadZiProjects() {
   const r = await bg('ZOHO_PROJECTS', { token, portal, dc });
   if (r?.ok) {
     sel.innerHTML = '<option value="">— Select project —</option>'
-      + (r.projects || []).map(p => '<option value="' + (p.id || p.id_string) + '">' + escHtml(p.name) + '</option>').join('');
+      + (r.projects || []).map(p => '<option value="' + (p.id_string || p.id) + '">' + escHtml(p.name) + '</option>').join('');
   } else {
     sel.innerHTML = '<option value="">Failed to load</option>';
   }
@@ -1914,7 +1938,7 @@ async function onZiProjectChange() {
   const r = await bg('ZOHO_TASKLISTS', { token, portal, dc, projectId });
   if (r?.ok) {
     tl.innerHTML = '<option value="_all">All tasks (no filter)</option>'
-      + (r.tasklists || []).map(t => '<option value="' + (t.id || t.id_string) + '">' + escHtml(t.name) + '</option>').join('');
+      + (r.tasklists || []).map(t => '<option value="' + (t.id_string || t.id) + '">' + escHtml(t.name) + '</option>').join('');
     tl.disabled = false;
   } else {
     tl.innerHTML = '<option value="">Failed to load</option>';

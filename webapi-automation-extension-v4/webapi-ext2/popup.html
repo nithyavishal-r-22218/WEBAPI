@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>WebAPI Automation Tool</title>
+<title>UI Auto Kit</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -65,6 +65,7 @@ button:active::after{opacity:1;transition:opacity 0s}
 .logo{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;transition:transform .3s,filter .3s;animation:pulse-glow 3s ease-in-out infinite;cursor:pointer}
 .logo:hover{transform:scale(1.12);filter:drop-shadow(0 0 10px rgba(6,182,212,.5))}
 .logo:hover .gear-group{animation:gearSpin 4s linear infinite}
+.gear-group{animation:gearSpin 8s linear infinite;transform-origin:0px 0px}
 .logo:active{transform:scale(.95)}
 .logo-words{flex:1;animation:slideInLeft .4s ease .1s both}
 .logo-name{font-size:15px;font-weight:700;letter-spacing:-.3px;color:var(--tx);line-height:1;transition:color .2s}
@@ -346,6 +347,19 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 
 /* Zoho integration */
 .zo-rec-name{font-size:12px;font-weight:600;color:#1e293b;padding:6px 10px;background:var(--glass2);border-radius:var(--rs);border:1px solid var(--b)}\n.zo-attach{display:flex;flex-direction:column;gap:6px;margin-top:8px}\n.zo-attach-chk{display:flex;align-items:center;gap:6px;font-size:11px;color:#334155;cursor:pointer}\n.zo-attach-chk input[type=checkbox]{accent-color:var(--brand);width:14px;height:14px}\n.zo-task{background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s}\n.zo-task:hover{border-color:rgba(34,197,94,.3);box-shadow:var(--shm);transform:translateX(2px)}\n.zo-task-name{font-size:12px;font-weight:600;color:#1e293b}\n.zo-task-meta{font-size:10px;color:#64748b;margin-top:2px;display:flex;gap:8px;align-items:center}\n.zo-task-badge{display:inline-flex;padding:1px 6px;border-radius:var(--rf);font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}\n.zo-task-badge.has-steps{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.15)}\n.zo-task-badge.no-steps{background:rgba(156,163,175,.1);color:var(--t3);border:1px solid rgba(156,163,175,.15)}\n.zo-detail{font-size:11.5px;color:#334155;line-height:1.7}\n.zo-detail b{color:#1e293b}\n.zo-detail pre{padding:8px 10px;background:var(--glass2);border-radius:var(--rs);font-size:10px;font-family:'DM Mono',monospace;overflow:auto;max-height:140px;margin:6px 0;border:1px solid var(--b);white-space:pre-wrap;word-break:break-all;color:#334155}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(148,163,184,.3);border-radius:10px}
+::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.5)}
+
+/* Badge pulse */
+.tbadge{transition:all .25s cubic-bezier(.4,0,.2,1)}
+.tbadge:not(:empty){animation:scaleIn .25s ease}
+
+/* Smooth selection highlight */
+::selection{background:rgba(59,130,246,.2);color:inherit}
 </style>
 </head>
 <body>
@@ -361,8 +375,10 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
         </defs>
         <rect width="512" height="512" rx="96" fill="#0f172a"/>
         <g transform="translate(256,256)">
+          <g class="gear-group" style="transform-origin:0px 0px">
           <g fill="url(#g1)"><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(0)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(45)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(90)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(135)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(180)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(225)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(270)"/><rect x="-20" y="-170" width="40" height="44" rx="7" transform="rotate(315)"/></g>
           <circle r="142" fill="none" stroke="url(#g1)" stroke-width="28"/>
+          </g>
           <circle r="100" fill="#0f172a"/>
           <circle r="92" fill="none" stroke="#10b98133" stroke-width="2"/>
           <path d="M-36,-62 C-36,-62 -52,-62 -52,-46 L-52,-15 C-52,-15 -52,0 -66,0 C-52,0 -52,15 -52,15 L-52,46 C-52,62 -36,62 -36,62" fill="none" stroke="#e0f2fe" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -374,8 +390,8 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       </svg>
     </div>
     <div class="logo-words">
-      <div class="logo-name">WebAPI</div>
-      <div class="logo-sub">Automation Tool</div>
+      <div class="logo-name">UI Auto Kit</div>
+      <div class="logo-sub">Flow Recorder</div>
     </div>
     <div class="hdr-r">
       <div class="conn-pill" id="apiPill"><span class="dot" id="apiDot"></span><span id="apiTxt">Offline</span></div>
@@ -458,9 +474,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div class="fwc on" data-fw="playwright"><span class="fwico">🎭</span><div class="fwnm">Playwright</div></div>
       <div class="fwc" data-fw="cypress"><span class="fwico">🌲</span><div class="fwnm">Cypress</div></div>
       <div class="fwc" data-fw="selenium"><span class="fwico">🔬</span><div class="fwnm">Selenium</div></div>
-      <div class="fwc" data-fw="puppeteer"><span class="fwico">🤖</span><div class="fwnm">Puppeteer</div></div>
-      <div class="fwc" data-fw="testcafe"><span class="fwico">☕</span><div class="fwnm">TestCafe</div></div>
-      <div class="fwc" data-fw="jest"><span class="fwico">🃏</span><div class="fwnm">Jest</div></div>
+
     </div>
     <div class="sec-lbl" style="margin-bottom:8px">Language</div>
     <div class="langs">
@@ -621,8 +635,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
           <div class="fld"><label>Framework</label>
             <select class="sel" id="sFw">
               <option value="playwright">Playwright</option><option value="cypress">Cypress</option>
-              <option value="selenium">Selenium</option><option value="puppeteer">Puppeteer</option>
-              <option value="testcafe">TestCafe</option><option value="jest">Jest</option>
+              <option value="selenium">Selenium</option>
             </select>
           </div>
           <div class="fld"><label>Language</label>
@@ -667,7 +680,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
         <div class="fld"><label>Framework</label>
           <select class="sel" id="cFw">
             <option value="playwright">Playwright</option><option value="cypress">Cypress</option>
-            <option value="selenium">Selenium</option><option value="jest">Jest</option>
+            <option value="selenium">Selenium</option>
             <option value="mocha">Mocha</option><option value="k6">k6</option>
           </select>
         </div>
@@ -889,6 +902,30 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 
 </div><!-- /app-frame -->
 
+<script>
+/* Ripple effect on all buttons */
+document.addEventListener('pointerdown',e=>{
+  const btn=e.target.closest('button,.ia,.lbtn,.fwc,.rd-type');
+  if(!btn)return;
+  const r=btn.getBoundingClientRect();
+  btn.style.setProperty('--rx',((e.clientX-r.left)/r.width*100)+'%');
+  btn.style.setProperty('--ry',((e.clientY-r.top)/r.height*100)+'%');
+});
+/* Stagger steps on render via MutationObserver */
+const sl=document.getElementById('stepList');
+if(sl){new MutationObserver(()=>{
+  sl.querySelectorAll('.step').forEach((s,i)=>{
+    s.style.animationDelay=(i*0.04)+'s';
+  });
+}).observe(sl,{childList:true});}
+/* Stagger library cards */
+const ll=document.getElementById('libList');
+if(ll){new MutationObserver(()=>{
+  ll.querySelectorAll('.rcard').forEach((c,i)=>{
+    c.style.animationDelay=(i*0.05)+'s';
+  });
+}).observe(ll,{childList:true});}
+</script>
 <script src="popup.js"></script>
 
 </body>

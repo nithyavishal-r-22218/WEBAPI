@@ -319,7 +319,9 @@
           var rloc = locators[ridx];
           if (rloc) {
             hideLocatorPanel();
-            showSleepPill(rloc, onSelect);
+            rloc.sleep = 0;
+            onSelect(rloc);
+            chrome.runtime.sendMessage({ type: 'LOCATOR_SELECTED', locator: rloc });
           }
         }
         return;
@@ -333,7 +335,9 @@
           var uloc = locators[uidx];
           if (uloc) {
             hideLocatorPanel();
-            showSleepPill(uloc, onSelect);
+            uloc.sleep = 0;
+            onSelect(uloc);
+            chrome.runtime.sendMessage({ type: 'LOCATOR_SELECTED', locator: uloc });
           }
         }
         return;

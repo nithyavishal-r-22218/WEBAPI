@@ -591,13 +591,18 @@ function injectRecorder() {
 
     if (api) {
       const info = { tagName:el.tagName.toLowerCase(), text:(el.innerText||el.value||el.placeholder||'').trim().slice(0,60), url:location.href, bounds:snap(el), t:Date.now() };
-      const locators = api.getAllLocators(el);
-      if (locators.length <= 1) {
+      const zpqa = el.getAttribute('data-zpqa');
+      if (zpqa) {
         recordClick(sel(el), info.tagName, info.text, info.bounds);
       } else {
-        api.showLocatorPanel(el, function(loc) {
-          recordClick(sel(el), info.tagName, info.text, info.bounds, loc.sleep);
-        });
+        const locators = api.getAllLocators(el);
+        if (locators.length <= 1) {
+          recordClick(sel(el), info.tagName, info.text, info.bounds);
+        } else {
+          api.showLocatorPanel(el, function(loc) {
+            recordClick(loc.value || sel(el), info.tagName, info.text, info.bounds, loc.sleep);
+          });
+        }
       }
     } else {
       const tagName = el.tagName.toLowerCase();
@@ -628,13 +633,18 @@ function injectRecorder() {
 
     if (api) {
       const info = { tagName:el.tagName.toLowerCase(), text:(el.innerText||el.value||el.placeholder||'').trim().slice(0,60), url:location.href, bounds:snap(el), t:Date.now() };
-      const locators = api.getAllLocators(el);
-      if (locators.length <= 1) {
+      const zpqa = el.getAttribute('data-zpqa');
+      if (zpqa) {
         recordRightClick(sel(el), info.tagName, info.text, info.bounds);
       } else {
-        api.showLocatorPanel(el, function(loc) {
-          recordRightClick(sel(el), info.tagName, info.text, info.bounds, loc.sleep);
-        });
+        const locators = api.getAllLocators(el);
+        if (locators.length <= 1) {
+          recordRightClick(sel(el), info.tagName, info.text, info.bounds);
+        } else {
+          api.showLocatorPanel(el, function(loc) {
+            recordRightClick(loc.value || sel(el), info.tagName, info.text, info.bounds, loc.sleep);
+          });
+        }
       }
     } else {
       const tagName = el.tagName.toLowerCase();
@@ -812,13 +822,34 @@ function injectRecorder() {
       clearTimeout(inputMap.get(editableRoot));
       inputMap.set(editableRoot, setTimeout(() => {
         lastActionKey = '';
-        const tgt = sel(editableRoot);
         const content = editableRoot.innerText || editableRoot.textContent || '';
-        const step = { action:'SEND_KEYS', target:tgt, tagName:editableRoot.tagName.toLowerCase(),
+        const api = window.__WEBAPI_API;
+        const stepBase = { action:'SEND_KEYS', tagName:editableRoot.tagName.toLowerCase(),
           text:editableRoot.getAttribute('aria-label') || editableRoot.className || 'contenteditable',
           value:content.trim().slice(0, 500), url:location.href, t:Date.now(),
           contenteditable:true };
-        showRandomPrompt(step, editableRoot);
+        if (api) {
+          const zpqa = editableRoot.getAttribute('data-zpqa');
+          if (zpqa) {
+            stepBase.target = sel(editableRoot);
+            showRandomPrompt(stepBase, editableRoot);
+          } else {
+            const locators = api.getAllLocators(editableRoot);
+            if (locators.length <= 1) {
+              stepBase.target = sel(editableRoot);
+              showRandomPrompt(stepBase, editableRoot);
+            } else {
+              api.showLocatorPanel(editableRoot, function(loc) {
+                stepBase.target = loc.value || sel(editableRoot);
+                stepBase.sleep = loc.sleep || 0;
+                showRandomPrompt(stepBase, editableRoot);
+              });
+            }
+          }
+        } else {
+          stepBase.target = sel(editableRoot);
+          showRandomPrompt(stepBase, editableRoot);
+        }
       }, 800));
       return;
     }
@@ -827,16 +858,37 @@ function injectRecorder() {
     clearTimeout(inputMap.get(el));
     inputMap.set(el, setTimeout(() => {
       lastActionKey = '';
-      const tgt = sel(el);
       if (el.tagName === 'SELECT') {
-        send({ action:'SEND_KEYS', target:tgt, tagName:el.tagName.toLowerCase(),
+        send({ action:'SEND_KEYS', target:sel(el), tagName:el.tagName.toLowerCase(),
           text:el.placeholder||el.name||el.ariaLabel||'',
           value:el.value, url:location.href, t:Date.now() });
       } else {
-        const step = { action:'SEND_KEYS', target:tgt, tagName:el.tagName.toLowerCase(),
+        const api = window.__WEBAPI_API;
+        const stepBase = { action:'SEND_KEYS', tagName:el.tagName.toLowerCase(),
           text:el.placeholder||el.name||el.ariaLabel||'',
           value:el.value, url:location.href, t:Date.now() };
-        showRandomPrompt(step, el);
+        if (api) {
+          const zpqa = el.getAttribute('data-zpqa');
+          if (zpqa) {
+            stepBase.target = sel(el);
+            showRandomPrompt(stepBase, el);
+          } else {
+            const locators = api.getAllLocators(el);
+            if (locators.length <= 1) {
+              stepBase.target = sel(el);
+              showRandomPrompt(stepBase, el);
+            } else {
+              api.showLocatorPanel(el, function(loc) {
+                stepBase.target = loc.value || sel(el);
+                stepBase.sleep = loc.sleep || 0;
+                showRandomPrompt(stepBase, el);
+              });
+            }
+          }
+        } else {
+          stepBase.target = sel(el);
+          showRandomPrompt(stepBase, el);
+        }
       }
     }, 600));
   }, true);
@@ -1173,57 +1225,42 @@ function _randPara(n){const w=['the','quick','brown','fox','jumps','over','lazy'
         if(fw==='playwright') return `  await page.goto('${t}');`;
         if(fw==='cypress')    return `    cy.visit('${t}');`;
         if(fw==='selenium')   return `    driver.get("${t}");`;
-        if(fw==='puppeteer')  return `  await page.goto('${t}');`;
-        if(fw==='testcafe')   return `  await t.navigateTo('${t}');`;
         return `// NAVIGATE_TO ${t}`;
       case 'CLICK':
         if(fw==='playwright') return `  await page.click('${t}'); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').click(); // ${step.text||''}`;
         if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).click();`;
-        if(fw==='puppeteer')  return `  await page.click('${t}');`;
-        if(fw==='testcafe')   return `  await t.click(Selector('${t}'));`;
         return `// CLICK ${t}`;
       case 'DOUBLE_CLICK':
         if(fw==='playwright') return `  await page.dblclick('${t}'); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').dblclick(); // ${step.text||''}`;
         if(fw==='selenium')   return `    new Actions(driver).doubleClick(driver.findElement(By.css("${t}"))).perform();`;
-        if(fw==='puppeteer')  return `  await page.click('${t}', { clickCount: 2 });`;
-        if(fw==='testcafe')   return `  await t.doubleClick(Selector('${t}'));`;
         return `// DOUBLE_CLICK ${t}`;
       case 'SEND_KEYS':
         if (isRd(step.value)) {
           const re = rdExprJS(step.value);
           if(fw==='playwright') return `  await page.fill('${t}', ${re});`;
           if(fw==='cypress')    return `    cy.get('${t}').clear().type(${re});`;
-          if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();\n    driver.findElement(By.css("${t}")).sendKeys(${re});`;
-          if(fw==='puppeteer')  return `  await page.type('${t}', ${re});`;
-          if(fw==='testcafe')   return `  await t.typeText(Selector('${t}'), ${re}, { replace: true });`;
+          if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();\n    driver.findElement(By.css("${t}")).sendKeys(${re})`;
         }
         if(fw==='playwright') return `  await page.fill('${t}', '${v}');`;
         if(fw==='cypress')    return `    cy.get('${t}').clear().type('${v}');`;
         if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();\n    driver.findElement(By.css("${t}")).sendKeys("${v}");`;
-        if(fw==='puppeteer')  return `  await page.type('${t}', '${v}');`;
-        if(fw==='testcafe')   return `  await t.typeText(Selector('${t}'), '${v}', { replace: true });`;
         return `// SEND_KEYS ${t}`;
       case 'CLEAR':
         if(fw==='playwright') return `  await page.fill('${t}', '');`;
         if(fw==='cypress')    return `    cy.get('${t}').clear();`;
         if(fw==='selenium')   return `    driver.findElement(By.css("${t}")).clear();`;
-        if(fw==='puppeteer')  return `  await page.$eval('${t}', el => el.value = '');`;
-        if(fw==='testcafe')   return `  await t.selectText(Selector('${t}')).pressKey('delete');`;
         return `// CLEAR ${t}`;
       case 'ASSERT_CHECK':
         if(fw==='playwright') return `  await expect(page.locator('${t}')).toContainText('${v}');`;
         if(fw==='cypress')    return `    cy.get('${t}').should('contain.text', '${v}');`;
         if(fw==='selenium')   return `    assertThat(driver.findElement(By.css("${t}")).getText(), containsString("${v}"));`;
-        if(fw==='testcafe')   return `  await t.expect(Selector('${t}').textContent).contains('${v}');`;
         return `// ASSERT_CHECK ${t} contains "${v}"`;
       case 'SCROLL_TO_ELEMENT':
         if(fw==='playwright') return `  await page.locator('${t}').scrollIntoViewIfNeeded({ timeout: ${step.scrollTimeout||10000} }); // scroll to element`;
         if(fw==='cypress')    return `    cy.get('${t}', { timeout: ${step.scrollTimeout||10000} }).scrollIntoView();`;
         if(fw==='selenium')   return `    driver.executeScript("arguments[0].scrollIntoView(true)", driver.findElement(By.css("${t}")));`;
-        if(fw==='puppeteer')  return `  await page.waitForSelector('${t}', { timeout: ${step.scrollTimeout||10000} });\n  await page.$eval('${t}', el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));`;
-        if(fw==='testcafe')   return `  await t.scrollIntoView(Selector('${t}'));`;
         return `// SCROLL_TO_ELEMENT ${t}`;
       case 'SCROLL_TO_ELEMENT_AND_CLICK':
         if(fw==='playwright') return `  await page.locator('${t}').scrollIntoViewIfNeeded();\n  await page.click('${t}');`;
@@ -1235,44 +1272,32 @@ function _randPara(n){const w=['the','quick','brown','fox','jumps','over','lazy'
         if(fw==='playwright') return `  await page.hover('${t}'); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').trigger('mouseover'); // ${step.text||''}`;
         if(fw==='selenium')   return `    new Actions(driver).moveToElement(driver.findElement(By.css("${t}"))).perform();`;
-        if(fw==='puppeteer')  return `  await page.hover('${t}');`;
-        if(fw==='testcafe')   return `  await t.hover(Selector('${t}'));`;
         return `// ${step.action} ${t}`;
       case 'ENTER_KEY':
         if(fw==='playwright') return `  await page.keyboard.press('Enter');`;
         if(fw==='cypress')    return `    cy.get('${t}').type('{enter}');`;
         if(fw==='selenium')   return `    new Actions(driver).sendKeys(Keys.ENTER).perform();`;
-        if(fw==='puppeteer')  return `  await page.keyboard.press('Enter');`;
-        if(fw==='testcafe')   return `  await t.pressKey('enter');`;
         return `// ENTER_KEY`;
       case 'ESCAPE_KEY':
         if(fw==='playwright') return `  await page.keyboard.press('Escape');`;
         if(fw==='cypress')    return `    cy.get('body').type('{esc}');`;
         if(fw==='selenium')   return `    new Actions(driver).sendKeys(Keys.ESCAPE).perform();`;
-        if(fw==='puppeteer')  return `  await page.keyboard.press('Escape');`;
-        if(fw==='testcafe')   return `  await t.pressKey('escape');`;
         return `// ESCAPE_KEY`;
       case 'BACK_SPACE_KEY':
         if(fw==='playwright') return `  await page.keyboard.press('Backspace');`;
         if(fw==='cypress')    return `    cy.get('${t}').type('{backspace}');`;
         if(fw==='selenium')   return `    new Actions(driver).sendKeys(Keys.BACK_SPACE).perform();`;
-        if(fw==='puppeteer')  return `  await page.keyboard.press('Backspace');`;
-        if(fw==='testcafe')   return `  await t.pressKey('backspace');`;
         return `// BACK_SPACE_KEY`;
       case 'CUT_COPY_PASTE_SELECTALL':
       case 'SHORTCUT_KEY':
         if(fw==='playwright') return `  await page.keyboard.press('${v}');`;
         if(fw==='cypress')    return `    cy.get('body').type('${'{'+v.replace(/\+/g,'}{').replace(/{([a-z])}/g,'$1')+'}'}', { release: false });`;
         if(fw==='selenium')   return `    new Actions(driver).sendKeys(${v.includes('+') ? v.split('+').map(k=>'Keys.'+k.toUpperCase()).join(', ') : 'Keys.'+v.toUpperCase()}).perform();`;
-        if(fw==='puppeteer')  return `  await page.keyboard.press('${v}');`;
-        if(fw==='testcafe')   return `  await t.pressKey('${v.toLowerCase().replace(/\+/g,' ')}');`;
         return `// ${step.action} ${v}`;
       case 'RIGHT_CLICK':
         if(fw==='playwright') return `  await page.click('${t}', { button: 'right' }); // ${step.text||''}`;
         if(fw==='cypress')    return `    cy.get('${t}').rightclick(); // ${step.text||''}`;
         if(fw==='selenium')   return `    new Actions(driver).contextClick(driver.findElement(By.css("${t}"))).perform();`;
-        if(fw==='puppeteer')  return `  await page.click('${t}', { button: 'right' });`;
-        if(fw==='testcafe')   return `  await t.rightClick(Selector('${t}'));`;
         return `// RIGHT_CLICK ${t}`;
       case 'REFRESH':
         if(fw==='playwright') return `  await page.reload();`;
@@ -1436,17 +1461,6 @@ ${stepsCode}
     }
     const seJs = steps.map(S).join('\n');
     return `const { Builder, By } = require('selenium-webdriver');\n${hasRandom ? '\n'+rdHelpersJS : ''}\ndescribe('${name}', function() {\n  let driver;\n  before(async () => { driver = await new Builder().forBrowser('chrome').build(); });\n  after(async  () => { await driver.quit(); });\n\n  it('flow', async function() {\n${seJs}\n  });\n});`;
-  }
-
-  if(fw==='puppeteer') {
-    const ppJs = steps.map(S).join('\n');
-    if(lang==='typescript') return `import puppeteer from 'puppeteer';\n${hasRandom ? '\n'+rdHelpersJS : ''}\ndescribe('${name}', () => {\n  let browser: puppeteer.Browser, page: puppeteer.Page;\n  beforeAll(async () => { browser = await puppeteer.launch(); page = await browser.newPage(); });\n  afterAll(async  () => await browser.close());\n\n  test('flow', async () => {\n${ppJs}\n  });\n});`;
-    return `const puppeteer = require('puppeteer');\n${hasRandom ? '\n'+rdHelpersJS : ''}\ndescribe('${name}', () => {\n  let browser, page;\n  beforeAll(async () => { browser = await puppeteer.launch({headless:'new'}); page = await browser.newPage(); });\n  afterAll(async  () => await browser.close());\n\n  test('flow', async () => {\n${ppJs}\n  });\n});`;
-  }
-
-  if(fw==='testcafe') {
-    const tcCode = steps.map(S).join('\n');
-    return `import { Selector } from 'testcafe';\n${hasRandom ? '\n'+rdHelpersJS : ''}\nfixture('${name}').page('${steps[0]?.target||'http://localhost'}');\n\ntest('recorded flow', async t => {\n${tcCode}\n});`;
   }
 
   return `// Framework "${fw}" / Language "${lang}"\n// Steps: ${steps.length}\n${stepsCode}`;
@@ -2294,55 +2308,104 @@ async function zohoExportTask(msg) {
         '/portal/' + portal + '/projects/' + projectId + '/tasks',
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(taskBody) }, dc
       );
-      task = taskResp.tasks ? taskResp.tasks[0] || taskResp.tasks : taskResp;
-      taskId = task.id || task.id_string;
+      // v3 may return array directly, or wrapped in {tasks:[...]}, or a single object
+      let parsed = taskResp;
+      if (Array.isArray(parsed)) parsed = parsed[0];
+      else if (parsed?.tasks) parsed = Array.isArray(parsed.tasks) ? parsed.tasks[0] : parsed.tasks;
+      task = parsed || {};
+      taskId = task.id_string || task.id;
     }
 
-    // Step 1: Upload file to portal, Step 2: Associate with task
+    // Try multiple strategies to upload and attach a file to the task
     async function uploadAndAttach(blob, filename) {
-      // Step 1: Upload to portal-level attachments
-      const fd = new FormData();
-      fd.append('upload_file', blob, filename);
-      const uploadUrl = base + '/portal/' + portal + '/attachments';
-      console.log('[ZOHO] Step 1 - Uploading to portal:', uploadUrl);
-      const ar = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
-        body: fd,
-        signal: AbortSignal.timeout(15000)
-      });
-      const arData = await ar.json().catch(() => ({}));
-      console.log('[ZOHO] Upload response:', ar.status, JSON.stringify(arData).slice(0, 500));
-      if (!ar.ok) return { name: filename, ok: false, err: 'Upload failed (' + ar.status + ')' };
+      const authHdr = { 'Authorization': 'Zoho-oauthtoken ' + accessToken };
+      const errors = [];
 
-      // Extract attachment ID — v3 returns { attachment: [{ attachment_id: "..." }] }
-      const attachList = arData.attachment || arData.attachments || [];
-      const firstAttach = Array.isArray(attachList) ? attachList[0] : attachList;
-      const attachId = (firstAttach && (firstAttach.attachment_id || firstAttach.id))
-        || arData.attachment_id || arData.id
-        || (Array.isArray(arData) && arData[0]?.attachment_id);
-      if (!attachId) {
-        console.log('[ZOHO] Could not extract attachment ID from:', JSON.stringify(arData).slice(0, 500));
-        return { name: filename, ok: false, err: 'No attachment ID in response' };
+      // ── Strategy 1: Direct task-level attachment upload ──
+      try {
+        const fd1 = new FormData();
+        fd1.append('uploaddoc', blob, filename);
+        const url1 = base + '/portal/' + portal + '/projects/' + projectId + '/tasks/' + taskId + '/attachments';
+        console.log('[ZOHO] Strategy 1 - Task-level upload:', url1);
+        const r1 = await fetch(url1, { method: 'POST', headers: authHdr, body: fd1, signal: AbortSignal.timeout(30000) });
+        const d1 = await r1.text().catch(() => '');
+        console.log('[ZOHO] Strategy 1 response:', r1.status, d1.slice(0, 500));
+        if (r1.ok) return { name: filename, ok: true };
+        errors.push('S1(' + r1.status + ')');
+
+        // Retry with upload_file field name
+        const fd1b = new FormData();
+        fd1b.append('upload_file', blob, filename);
+        const r1b = await fetch(url1, { method: 'POST', headers: authHdr, body: fd1b, signal: AbortSignal.timeout(30000) });
+        const d1b = await r1b.text().catch(() => '');
+        console.log('[ZOHO] Strategy 1b response:', r1b.status, d1b.slice(0, 500));
+        if (r1b.ok) return { name: filename, ok: true };
+        errors.push('S1b(' + r1b.status + ')');
+      } catch(e) { errors.push('S1err:' + e.message); console.log('[ZOHO] Strategy 1 error:', e.message); }
+
+      // ── Strategy 2: Portal-level upload + associate ──
+      try {
+        const fd2 = new FormData();
+        fd2.append('upload_file', blob, filename);
+        const uploadUrl = base + '/portal/' + portal + '/attachments';
+        console.log('[ZOHO] Strategy 2 - Portal upload:', uploadUrl);
+        const r2 = await fetch(uploadUrl, { method: 'POST', headers: authHdr, body: fd2, signal: AbortSignal.timeout(30000) });
+        const d2 = await r2.json().catch(() => ({}));
+        console.log('[ZOHO] Strategy 2 upload response:', r2.status, JSON.stringify(d2).slice(0, 500));
+        if (r2.ok) {
+          // Extract attachment ID from any possible response shape
+          const attachId = extractAttachId(d2);
+          if (attachId) {
+            // Associate with task
+            const assocUrl = base + '/portal/' + portal + '/projects/' + projectId + '/attachments/' + attachId;
+            console.log('[ZOHO] Strategy 2 - Associate:', assocUrl, 'taskId:', taskId);
+            const afd = new FormData();
+            afd.append('entity_type', 'task');
+            afd.append('entity_id', String(taskId));
+            const ra = await fetch(assocUrl, { method: 'POST', headers: authHdr, body: afd, signal: AbortSignal.timeout(15000) });
+            const da = await ra.text().catch(() => '');
+            console.log('[ZOHO] Strategy 2 associate response:', ra.status, da.slice(0, 300));
+            if (ra.ok) return { name: filename, ok: true };
+            errors.push('S2assoc(' + ra.status + ')');
+          } else {
+            errors.push('S2noId');
+            console.log('[ZOHO] Strategy 2 - Could not extract attachment ID from:', JSON.stringify(d2).slice(0, 500));
+          }
+        } else {
+          errors.push('S2upload(' + r2.status + ')');
+        }
+      } catch(e) { errors.push('S2err:' + e.message); console.log('[ZOHO] Strategy 2 error:', e.message); }
+
+      // ── Strategy 3: REST API v1 style upload ──
+      try {
+        const restBase = 'https://projectsapi.zoho' + (dc || '.com') + '/restapi';
+        const fd3 = new FormData();
+        fd3.append('uploaddoc', blob, filename);
+        const url3 = restBase + '/portal/' + portal + '/projects/' + projectId + '/tasks/' + taskId + '/attachments/';
+        console.log('[ZOHO] Strategy 3 - REST v1 upload:', url3);
+        const r3 = await fetch(url3, { method: 'POST', headers: authHdr, body: fd3, signal: AbortSignal.timeout(30000) });
+        const d3 = await r3.text().catch(() => '');
+        console.log('[ZOHO] Strategy 3 response:', r3.status, d3.slice(0, 500));
+        if (r3.ok) return { name: filename, ok: true };
+        errors.push('S3(' + r3.status + ')');
+      } catch(e) { errors.push('S3err:' + e.message); console.log('[ZOHO] Strategy 3 error:', e.message); }
+
+      return { name: filename, ok: false, err: errors.join(', ') };
+    }
+
+    function extractAttachId(data) {
+      // Try every known response shape
+      const list = data.attachment || data.attachments || data.docs || data.documents || [];
+      const first = Array.isArray(list) ? list[0] : list;
+      if (first) {
+        const id = first.attachment_id || first.id_string || first.id || first.doc_id;
+        if (id) return String(id);
       }
-      console.log('[ZOHO] Extracted attachment ID:', attachId);
-
-      // Step 2: Associate attachment with the task
-      const assocUrl = base + '/portal/' + portal + '/projects/' + projectId + '/attachments/' + attachId;
-      console.log('[ZOHO] Step 2 - Associating attachment', attachId, 'with task', taskId, ':', assocUrl);
-      const assocFd = new FormData();
-      assocFd.append('entity_type', 'task');
-      assocFd.append('entity_id', String(taskId));
-      const assocR = await fetch(assocUrl, {
-        method: 'POST',
-        headers: { 'Authorization': 'Zoho-oauthtoken ' + accessToken },
-        body: assocFd,
-        signal: AbortSignal.timeout(15000)
-      });
-      const assocData = await assocR.json().catch(() => ({}));
-      console.log('[ZOHO] Associate response:', assocR.status, JSON.stringify(assocData).slice(0, 500));
-      if (!assocR.ok) return { name: filename, ok: false, err: 'Associate failed (' + assocR.status + ')' };
-      return { name: filename, ok: true };
+      // Top-level ID
+      if (data.attachment_id || data.id_string || data.id) return String(data.attachment_id || data.id_string || data.id);
+      // Array response
+      if (Array.isArray(data) && data[0]) return String(data[0].attachment_id || data[0].id_string || data[0].id || '');
+      return null;
     }
 
     const attachResults = [];
