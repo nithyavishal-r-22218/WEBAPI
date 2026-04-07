@@ -692,7 +692,7 @@ function setRecUI(isRec) {
     ico.textContent = '⏺'; txt.textContent = '● Rec';
     const n = G.live.steps.length;
     title.textContent = n > 0 ? '✓ Done — ' + n + ' steps saved to Library' : 'Click to Start Recording';
-    sub.textContent   = n > 0 ? 'View in Library · Generate code · Run test' : 'Captures clicks · inputs · navigation · API calls';
+    sub.textContent   = n > 0 ? 'View in Library · Generate code · Run test' : 'Captures clicks · inputs · navigation';
     if (inspBtn) { inspBtn.disabled = false; inspBtn.style.opacity = '1'; inspBtn.style.pointerEvents = 'auto'; }
   }
 }
@@ -929,9 +929,9 @@ function renderLibrary() {
     if (steps.length > 4) preview += '<div style="font-size:10.5px;color:var(--t3);padding-left:22px">+' + (steps.length-4) + ' more</div>';
     return '<div class="rcard">'
       + '<div class="rcard-hd">'
-        + '<div class="rthumb" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">🎬</div>'
+        + '<div class="rthumb" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">🖥️</div>'
         + '<div class="ri" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><div class="rname">'+r.name+'</div>'
-          + '<div class="rmeta">'+steps.length+' steps · '+nets.length+' API calls · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
+          + '<div class="rmeta">'+steps.length+' steps · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
         + '<div class="racts">'
           + '<button class="ia edit" data-action="loadRec"        data-id="'+r.id+'" title="Edit recording">📝</button>'
           + '<button class="ia add"  data-action="runRec"         data-id="'+r.id+'" title="Run test">▶</button>'
@@ -1039,7 +1039,7 @@ function onGenRecChange() {
   const rec = G.recordings.find(r => r.id === id);
   if (!rec) return;
   info.style.display = 'block';
-  info.textContent   = (rec.steps?.length||0) + ' steps · ' + (rec.network?.length||0) + ' API calls · ' + (rec.startUrl || '—');
+  info.textContent   = (rec.steps?.length||0) + ' steps · ' + (rec.startUrl || '—');
 }
 
 function pickFW(el) {

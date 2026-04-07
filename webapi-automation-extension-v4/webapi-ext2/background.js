@@ -154,7 +154,7 @@ async function stopRec() {
   if (!REC.active) return null;
   const rec = {
     id: 'r'+Date.now(),
-    name: 'Recording '+new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'}),
+    name: 'UI Flow '+new Date().toLocaleTimeString('en',{hour:'2-digit',minute:'2-digit'}),
     steps: [...REC.steps],
     network: [...REC.network],
     startUrl: REC.steps[0]?.url || '',
@@ -177,6 +177,12 @@ async function stopRec() {
 }
 
 function addStep(step) {
+  // Consecutive duplicate check: skip if previous step has same action + target
+  const prev = REC.steps[REC.steps.length - 1];
+  if (prev && step.action === prev.action && step.target === prev.target
+      && step.action !== 'NAVIGATE_TO' && step.action !== 'SEND_KEYS') {
+    return;
+  }
   step.idx = REC.steps.length;
   REC.steps.push(step);
   broadcast({ type:'STEP', step, total:REC.steps.length });
@@ -227,6 +233,8 @@ function injectRecorder() {
   window.__WEBAPI_REC__ = true;
   let seq = 0;
   let lastActionKey = '';   // for dedup
+  let lastRecordTime = 0;  // timestamp dedup
+  const recentlySentInputs = new WeakMap(); // el → timestamp, prevents double SEND_KEYS after random popup
 
   // ── ZPQA-first XPath selector builder ────────────────────────────────────────
   function sel(el) {
@@ -294,6 +302,10 @@ function injectRecorder() {
     // Dedup: skip if same action+target+value as the very last step
     const key = step.action + '|' + step.target + '|' + (step.value || '');
     if (key === lastActionKey && step.action !== 'NAVIGATE_TO') return;
+    // Timestamp dedup: skip if same action recorded within 300ms
+    const now = Date.now();
+    if (now - lastRecordTime < 300 && step.action !== 'NAVIGATE_TO' && step.action !== 'SEND_KEYS') return;
+    lastRecordTime = now;
     lastActionKey = key;
     step.id = ++seq;
     // Flag steps from iframes so replay knows to target the right frame
@@ -591,9 +603,9 @@ function injectRecorder() {
 
     if (api) {
       const info = { tagName:el.tagName.toLowerCase(), text:(el.innerText||el.value||el.placeholder||'').trim().slice(0,60), url:location.href, bounds:snap(el), t:Date.now() };
-      const zpqa = el.getAttribute('data-zpqa');
-      if (zpqa) {
-        recordClick(sel(el), info.tagName, info.text, info.bounds);
+      const zpqaEl = el.getAttribute('data-zpqa') ? el : el.closest('[data-zpqa]');
+      if (zpqaEl) {
+        recordClick(sel(zpqaEl), zpqaEl.tagName.toLowerCase(), info.text, snap(zpqaEl));
       } else {
         const locators = api.getAllLocators(el);
         if (locators.length <= 1) {
@@ -633,9 +645,9 @@ function injectRecorder() {
 
     if (api) {
       const info = { tagName:el.tagName.toLowerCase(), text:(el.innerText||el.value||el.placeholder||'').trim().slice(0,60), url:location.href, bounds:snap(el), t:Date.now() };
-      const zpqa = el.getAttribute('data-zpqa');
-      if (zpqa) {
-        recordRightClick(sel(el), info.tagName, info.text, info.bounds);
+      const zpqaEl = el.getAttribute('data-zpqa') ? el : el.closest('[data-zpqa]');
+      if (zpqaEl) {
+        recordRightClick(sel(zpqaEl), zpqaEl.tagName.toLowerCase(), info.text, snap(zpqaEl));
       } else {
         const locators = api.getAllLocators(el);
         if (locators.length <= 1) {
@@ -748,6 +760,7 @@ function injectRecorder() {
           // Email has no length — apply directly
           step.value = '{{random:email}}';
           send(step);
+          recentlySentInputs.set(el, Date.now());
           removeRandomPopup();
           return;
         }
@@ -768,7 +781,7 @@ function injectRecorder() {
         lenEl.addEventListener('input', () => { rangeEl.value = lenEl.value; });
         // Reset auto-dismiss timer for step 2
         clearTimeout(randomAutoTimer);
-        randomAutoTimer = setTimeout(() => { if (randomPopup) { send(step); removeRandomPopup(); } }, 15000);
+        randomAutoTimer = setTimeout(() => { if (randomPopup) { send(step); recentlySentInputs.set(el, Date.now()); removeRandomPopup(); } }, 15000);
       });
     });
 
@@ -776,6 +789,7 @@ function injectRecorder() {
     randomPopup.querySelector('#__wb_rd_no').addEventListener('click', ev => {
       ev.stopPropagation(); ev.preventDefault();
       send(step);
+      recentlySentInputs.set(el, Date.now());
       removeRandomPopup();
     });
 
@@ -785,7 +799,7 @@ function injectRecorder() {
       randomPopup.querySelector('#__wb_rd_step1').style.display = 'block';
       randomPopup.querySelector('#__wb_rd_step2').style.display = 'none';
       clearTimeout(randomAutoTimer);
-      randomAutoTimer = setTimeout(() => { if (randomPopup) { send(step); removeRandomPopup(); } }, 8000);
+      randomAutoTimer = setTimeout(() => { if (randomPopup) { send(step); recentlySentInputs.set(el, Date.now()); removeRandomPopup(); } }, 8000);
     });
 
     // Apply button
@@ -794,6 +808,7 @@ function injectRecorder() {
       const len = parseInt(randomPopup.querySelector('#__wb_rd_len').value, 10) || defaults[chosenType] || 10;
       step.value = '{{random:' + chosenType + ':' + len + '}}';
       send(step);
+      recentlySentInputs.set(el, Date.now());
       removeRandomPopup();
     });
 
@@ -801,6 +816,7 @@ function injectRecorder() {
     randomAutoTimer = setTimeout(() => {
       if (randomPopup) {
         send(step);
+        recentlySentInputs.set(el, Date.now());
         removeRandomPopup();
       }
     }, 8000);
@@ -819,9 +835,11 @@ function injectRecorder() {
     // Handle contenteditable elements (rich text editors like <body contenteditable>)
     const editableRoot = getEditableRoot(el);
     if (editableRoot) {
+      // Skip if this element recently had a step sent via random popup
+      const lastSentCE = recentlySentInputs.get(editableRoot);
+      if (lastSentCE && Date.now() - lastSentCE < 3000) return;
       clearTimeout(inputMap.get(editableRoot));
       inputMap.set(editableRoot, setTimeout(() => {
-        lastActionKey = '';
         const content = editableRoot.innerText || editableRoot.textContent || '';
         const api = window.__WEBAPI_API;
         const stepBase = { action:'SEND_KEYS', tagName:editableRoot.tagName.toLowerCase(),
@@ -855,9 +873,11 @@ function injectRecorder() {
     }
 
     if (!['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
+    // Skip if this element recently had a step sent via random popup
+    const lastSentInput = recentlySentInputs.get(el);
+    if (lastSentInput && Date.now() - lastSentInput < 3000) return;
     clearTimeout(inputMap.get(el));
     inputMap.set(el, setTimeout(() => {
-      lastActionKey = '';
       if (el.tagName === 'SELECT') {
         send({ action:'SEND_KEYS', target:sel(el), tagName:el.tagName.toLowerCase(),
           text:el.placeholder||el.name||el.ariaLabel||'',
@@ -903,7 +923,6 @@ function injectRecorder() {
     if (el.closest('#__webapi_sleep_pill')) return;
     const text = (el.innerText || '').trim().slice(0, 80);
     if (!text) return;
-    lastActionKey = '';
     const tgt = sel(el);
     send({ action:'ASSERT_CHECK', target:tgt, value:text, text, url:location.href, t:Date.now() });
     el.style.outline = '2px solid #00d4aa';
@@ -961,9 +980,9 @@ function injectRecorder() {
   // ── SPA navigation ───────────────────────────────────────────────────────────
   const pPush = history.pushState.bind(history);
   const pRepl = history.replaceState.bind(history);
-  history.pushState = (...a) => { pPush(...a); setTimeout(() => { lastActionKey=''; send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
-  history.replaceState = (...a) => { pRepl(...a); setTimeout(() => { lastActionKey=''; send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
-  window.addEventListener('popstate', () => { lastActionKey=''; send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); });
+  history.pushState = (...a) => { pPush(...a); setTimeout(() => { send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
+  history.replaceState = (...a) => { pRepl(...a); setTimeout(() => { send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); }, 50); };
+  window.addEventListener('popstate', () => { send({ action:'NAVIGATE_TO', target:location.href, value:'', url:location.href, t:Date.now() }); });
 
   // ── Network intercept ────────────────────────────────────────────────────────
   const oFetch = window.fetch;
