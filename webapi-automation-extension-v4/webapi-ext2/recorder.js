@@ -31,12 +31,13 @@
   }
 
   function getRelativeXPath(el) {
-    if (el.id) return '//*[@id="' + el.id + '"]';
     const tag = el.tagName.toLowerCase();
-    const text = (el.textContent || '').trim().slice(0, 30);
-    if (text && !el.children.length) return '//' + tag + '[contains(text(),"' + text.replace(/"/g, "'") + '")]';
+    // Priority 1: data-zpqa always wins
     const zpqa = el.getAttribute('data-zpqa');
     if (zpqa) return '//' + tag + '[@data-zpqa="' + zpqa + '"]';
+    if (el.id) return '//*[@id="' + el.id + '"\]';
+    const text = (el.textContent || '').trim().slice(0, 30);
+    if (text && !el.children.length) return '//' + tag + '[contains(text(),"' + text.replace(/"/g, "'") + '")]';
     const aria = el.getAttribute('aria-label');
     if (aria) return '//' + tag + '[@aria-label="' + aria + '"]';
     return getXPath(el);
@@ -77,12 +78,12 @@
       return locators;
     }
 
-    // ID
-    if (el.id) locators.push({ type: 'ID', strategy: 'css', value: '#' + CSS.escape(el.id) });
-
-    // data-zpqa (Zoho-specific)
+    // data-zpqa (always first priority)
     const zpqa = el.getAttribute('data-zpqa');
     if (zpqa) locators.push({ type: 'ZPQA', strategy: 'css', value: '[data-zpqa="' + zpqa + '"]' });
+
+    // ID
+    if (el.id) locators.push({ type: 'ID', strategy: 'css', value: '#' + CSS.escape(el.id) });
 
     // data-testid
     const tid = el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-cy') || el.getAttribute('data-qa');
@@ -493,7 +494,7 @@
     if (el.id && el.id.startsWith('__')) return;
     if (el.closest('#__webapi_lpanel') || el.closest('#__webapi_highlight') || el.closest('#__webapi_hlabel') || el.closest('#__webapi_sleep_pill')) return;
     if (el.id === '__webapi_freeze_badge') return;
-    updateHighlight(el);
+    // Highlight disabled during inspect — only show crosshair cursor
   }
 
   function onInspectClick(e) {

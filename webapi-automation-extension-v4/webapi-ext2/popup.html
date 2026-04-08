@@ -410,8 +410,8 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 <div class="tabs" id="tabBar">
   <div class="tab on" id="t-record">⏺ Record</div>
   <div class="tab" id="t-library">📂 Library <span class="tbadge" id="tb-lib">0</span></div>
-  <div class="tab" id="t-generate">⚡ Generate</div>
-  <div class="tab" id="t-tests">🧪 Tests <span class="tbadge" id="tb-tests">0</span></div>
+  <div class="tab" id="t-generate" style="display:none">⚡ Generate</div>
+  <div class="tab" id="t-tests" style="display:none">🧪 Tests <span class="tbadge" id="tb-tests">0</span></div>
   <div class="tab" id="t-results">📊 Results <span class="tbadge" id="tb-results">0</span></div>
   <div class="tab" id="t-zoho"><svg width="14" height="14" viewBox="0 0 48 48" fill="none" style="vertical-align:-2px;margin-right:2px"><path d="M6 28l10 10" stroke="#e53935" stroke-width="5.5" stroke-linecap="round"/><path d="M16 38l8-8" stroke="#f9a825" stroke-width="5.5" stroke-linecap="round"/><path d="M24 30l8-10" stroke="#43a047" stroke-width="5.5" stroke-linecap="round"/><path d="M32 20l10-12" stroke="#1e88e5" stroke-width="5.5" stroke-linecap="round"/><path d="M14 20l10 10" stroke="#f9a825" stroke-width="5.5" stroke-linecap="round" opacity=".6"/><path d="M24 30l14-18" stroke="#1e88e5" stroke-width="5.5" stroke-linecap="round" opacity=".6"/></svg> ZP</div>
   <div class="tgap"></div>
@@ -441,6 +441,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div class="sbtn-row">
         <button class="btn btn-ghost btn-xs" id="clearBtn">Clear</button>
         <button class="btn btn-outline btn-xs" id="nameBtn">✏ Name</button>
+        <button class="btn btn-outline btn-xs" id="smartRunLiveBtn" title="Smart Run — auto-detect portal & project">🧠 Smart Run</button>
         <button class="btn btn-dark btn-xs" id="saveRecBtn" disabled>Save</button>
       </div>
     </div>
@@ -570,6 +571,32 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
           <button class="btn btn-outline btn-sm" id="testZohoBtn">Test Connection</button>
         </div>
         <div id="zohoConnStatus" style="display:none;margin-top:8px;font-size:10.5px;padding:6px 10px;border-radius:var(--rs)"></div>
+      </div>
+    </div>
+
+    <!-- RANDOM DATA CONFIG -->
+    <div class="scard" style="margin-bottom:10px">
+      <div class="scard-hd" id="zpRdCfgToggle" style="cursor:pointer">
+        <div class="scard-ico" style="background:linear-gradient(135deg,rgba(245,166,35,.12),rgba(240,91,91,.12))">🎲</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600">Random Data Config</div><div style="font-size:10.5px;color:var(--t3);margin-top:1px">Email domain &amp; phone prefix for generated test data</div></div>
+        <span id="zpRdCfgArrow" style="color:var(--t3);font-size:11px;transition:transform .2s">▼</span>
+      </div>
+      <div class="scard-body" id="zpRdCfgBody" style="display:none">
+        <div class="r2">
+          <div class="fld"><label>Email Domain</label><input class="inp" id="randomEmailDomain" placeholder="@test.com"/></div>
+          <div class="fld"><label>Phone Prefix</label><input class="inp" id="randomPhonePrefix" placeholder="+1-555-"/></div>
+        </div>
+        <div style="font-size:10px;color:var(--t3);margin-bottom:8px">Used in {{random:email}} and {{random:phone}} during recording &amp; replay</div>
+        <button class="btn btn-dark btn-sm" id="saveRdCfgBtn">Save</button>
+      </div>
+    </div>
+
+    <!-- SEED SAMPLE FLOWS -->
+    <div class="scard" style="margin-bottom:10px">
+      <div class="scard-hd">
+        <div class="scard-ico" style="background:linear-gradient(135deg,rgba(52,211,153,.12),rgba(59,130,246,.12))">🌱</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600">Sample Flows</div><div style="font-size:10.5px;color:var(--t3);margin-top:1px">Seed Flow 1 (Create Project) + Flow 2 (Tasklist → Task → Comment)</div></div>
+        <button class="btn btn-outline btn-xs" id="seedFlowsBtn" title="Create sample recordings and set Flow 1 as template">🌱 Seed</button>
       </div>
     </div>
 
@@ -804,6 +831,12 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
         <button class="rd-edit-btn" id="seRandomEdit">✏️ Edit</button>
         <button class="rd-remove-btn" id="seRandomRemove">✕ Remove</button>
       </div>
+      <div id="seLinkWrap" style="display:none;margin-top:6px">
+        <label style="font-size:11px;color:var(--t2)">🔗 Link assertion to a random step value</label>
+        <select class="inp" id="seLinkStep" style="font-size:11px;margin-top:4px">
+          <option value="">— static value —</option>
+        </select>
+      </div>
     </div>
     <div class="mft">
       <button class="btn btn-ghost btn-sm" id="cancelStepEditBtn">Cancel</button>
@@ -826,6 +859,17 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
         <div class="rd-type" data-rtype="email"><span class="rd-type-ico">📧</span><div class="rd-type-nm">Email</div></div>
         <div class="rd-type" data-rtype="paragraph"><span class="rd-type-ico">📝</span><div class="rd-type-nm">Paragraph</div></div>
         <div class="rd-type" data-rtype="xss"><span class="rd-type-ico">🛡</span><div class="rd-type-nm">XSS</div></div>
+      </div>
+      <div class="sec-lbl" style="margin:8px 0 6px;color:var(--t2)">Zoho Projects</div>
+      <div class="rd-types">
+        <div class="rd-type" data-rtype="taskname"><span class="rd-type-ico">📋</span><div class="rd-type-nm">Task Name</div></div>
+        <div class="rd-type" data-rtype="bugname"><span class="rd-type-ico">🐛</span><div class="rd-type-nm">Bug Name</div></div>
+        <div class="rd-type" data-rtype="projectname"><span class="rd-type-ico">📂</span><div class="rd-type-nm">Project</div></div>
+        <div class="rd-type" data-rtype="username"><span class="rd-type-ico">👤</span><div class="rd-type-nm">User Name</div></div>
+        <div class="rd-type" data-rtype="phone"><span class="rd-type-ico">📱</span><div class="rd-type-nm">Phone</div></div>
+        <div class="rd-type" data-rtype="date"><span class="rd-type-ico">📅</span><div class="rd-type-nm">Date</div></div>
+        <div class="rd-type" data-rtype="uuid"><span class="rd-type-ico">🆔</span><div class="rd-type-nm">UUID</div></div>
+        <div class="rd-type" data-rtype="timestamp"><span class="rd-type-ico">⏱</span><div class="rd-type-nm">Timestamp</div></div>
       </div>
       <div id="rdConfigWrap">
         <div id="rdLenConfig" class="rd-config">

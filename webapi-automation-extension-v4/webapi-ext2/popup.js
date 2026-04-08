@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════
 const G = {
   recordings:[], cases:[], results:[],
-  settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light', zohoToken:'', zohoPortal:'', zohoDC:'.com', zpClientId:'', zpClientSecret:'', zpPortalId:'', zpPortals:[], zpEnvironments:[] },
+  settings:{ url:'http://localhost:4000', key:'godmode-dev-key', fw:'playwright', lang:'javascript', theme:'light', zohoToken:'', zohoPortal:'', zohoDC:'.com', zpClientId:'', zpClientSecret:'', zpPortalId:'', zpPortals:[], zpEnvironments:[], zpProjectTemplate:'' },
   live:{ steps:[], network:[], recording:false, name:'', startUrl:'', t0:null, id:null },
   genFW:'playwright', genLang:'javascript', genCode:'', genRecId:'',
   editCaseId:null,
@@ -38,9 +38,10 @@ function animateCount(el, to) {
 async function gmPost(path, body) {
   try {
     const cfg = G.settings;
-    const r = await fetch((cfg.url || 'http://localhost:4000') + path, {
+    if (!cfg.url) return { ok: false, error: 'No API URL configured' };
+    const r = await fetch(cfg.url + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key || 'godmode-dev-key' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key || '' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(6000)
     });
@@ -53,9 +54,10 @@ async function gmPost(path, body) {
 async function gmPut(path, body) {
   try {
     const cfg = G.settings;
-    const r = await fetch((cfg.url || 'http://localhost:4000') + path, {
+    if (!cfg.url) return { ok: false, error: 'No API URL configured' };
+    const r = await fetch(cfg.url + path, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key || 'godmode-dev-key' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.key || '' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(6000)
     });
@@ -68,8 +70,9 @@ async function gmPut(path, body) {
 async function gmGet(path) {
   try {
     const cfg = G.settings;
-    const r = await fetch((cfg.url || 'http://localhost:4000') + path, {
-      headers: { 'x-api-key': cfg.key || 'godmode-dev-key' },
+    if (!cfg.url) return null;
+    const r = await fetch(cfg.url + path, {
+      headers: { 'x-api-key': cfg.key || '' },
       signal: AbortSignal.timeout(6000)
     });
     return await r.json();
@@ -182,35 +185,77 @@ function randomNumber(len) {
   if (r[0] === '0' && len > 1) r = (Math.floor(Math.random()*9)+1) + r.slice(1);
   return r;
 }
-function randomEmail() { return randomString(8).toLowerCase() + '@zohotest.com'; }
+function randomEmail() { return randomString(8).toLowerCase() + (G.settings.randomEmailDomain || '@test.com'); }
 function randomParagraph(len) {
   const words = ['the','quick','brown','fox','jumps','over','lazy','dog','lorem','ipsum','dolor','sit','amet','testing','automation','quality','software','web','browser','data','input','form','field','check','verify','validate','click','submit','text','page','screen','element','button'];
   let r = '';
   while (r.length < len) { r += words[Math.floor(Math.random()*words.length)] + ' '; }
   return r.slice(0, len);
 }
+function randomTaskName() {
+  const p = ['Task','Item','Work','Todo','Story','Ticket'];
+  return p[Math.floor(Math.random()*p.length)] + '_Auto_' + randomString(6) + '_' + randomNumber(4);
+}
+function randomBugName() {
+  const p = ['Bug','Defect','Issue','Error','Fault'];
+  return p[Math.floor(Math.random()*p.length)] + '_Auto_' + randomString(6) + '_' + randomNumber(4);
+}
+function randomProjectName() {
+  const p = ['Project','Sprint','Release','Module'];
+  return p[Math.floor(Math.random()*p.length)] + '_Auto_' + randomString(5) + '_' + randomNumber(3);
+}
+function randomUsername() {
+  const f = ['Alice','Bob','Carol','Dave','Eve','Frank','Grace','Henry','Ivy','Jack'];
+  const l = ['Smith','Jones','Brown','Wilson','Taylor','Clark','Hall','Adams'];
+  return f[Math.floor(Math.random()*f.length)] + ' ' + l[Math.floor(Math.random()*l.length)];
+}
+function randomPhone() { return (G.settings.randomPhonePrefix || '+1-555-') + randomNumber(3) + '-' + randomNumber(4); }
+function randomDate() {
+  const d = new Date(Date.now() + Math.floor(Math.random()*180-90)*86400000);
+  return d.toISOString().slice(0,10);
+}
+function randomUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random()*16|0; return (c==='x' ? r : (r&0x3|0x8)).toString(16);
+  });
+}
 function generatePreview(type, len, xssIdx) {
-  if (type === 'string')    return randomString(len);
-  if (type === 'number')    return randomNumber(len);
-  if (type === 'email')     return randomEmail();
-  if (type === 'paragraph') return randomParagraph(len);
-  if (type === 'xss')       return XSS_PAYLOADS[xssIdx || 0];
+  if (type === 'string')      return randomString(len);
+  if (type === 'number')      return randomNumber(len);
+  if (type === 'email')       return randomEmail();
+  if (type === 'paragraph')   return randomParagraph(len);
+  if (type === 'xss')         return XSS_PAYLOADS[xssIdx || 0];
+  if (type === 'taskname')    return randomTaskName();
+  if (type === 'bugname')     return randomBugName();
+  if (type === 'projectname') return randomProjectName();
+  if (type === 'username')    return randomUsername();
+  if (type === 'phone')       return randomPhone();
+  if (type === 'date')        return randomDate();
+  if (type === 'uuid')        return randomUUID();
+  if (type === 'timestamp')   return '' + Date.now();
   return '';
 }
 function isRandomValue(v) { return v && v.startsWith('{{random:') && v.endsWith('}}'); }
+function isVarRef(v) { return v && v.startsWith('{{var:') && v.endsWith('}}'); }
 function parseRandomToken(v) {
-  const m = v.match(/^\{\{random:(\w+)(?::(\d+))?\}\}$/);
+  const m = v.match(/^\{\{random:(\w+)(?::([^\}]+))?\}\}$/);
   if (!m) return null;
-  return { type: m[1], len: m[2] ? parseInt(m[2]) : undefined };
+  return { type: m[1], len: m[2] ? parseInt(m[2]) : undefined, param: m[2] || undefined };
 }
 function randomTokenLabel(v) {
   const p = parseRandomToken(v);
   if (!p) return v;
-  const labels = { string:'String', number:'Number', email:'Email', paragraph:'Paragraph', xss:'XSS' };
-  const ico = { string:'🔤', number:'🔢', email:'📧', paragraph:'📝', xss:'🛡' };
+  const labels = { string:'String', number:'Number', email:'Email', paragraph:'Paragraph', xss:'XSS', taskname:'Task Name', bugname:'Bug Name', projectname:'Project Name', username:'User Name', phone:'Phone', date:'Date', uuid:'UUID', timestamp:'Timestamp' };
+  const ico = { string:'🔤', number:'🔢', email:'📧', paragraph:'📝', xss:'🛡', taskname:'📋', bugname:'🐛', projectname:'📂', username:'👤', phone:'📱', date:'📅', uuid:'🆔', timestamp:'⏱' };
   let lbl = (ico[p.type]||'🎲') + ' ' + (labels[p.type]||p.type);
-  if (p.len) lbl += ' (' + p.len + ' chars)';
+  if (p.len && !isNaN(parseInt(p.len))) lbl += ' (' + p.len + ' chars)';
+  else if (p.param) lbl += ' (' + p.param + ')';
   return lbl;
+}
+function varRefLabel(v) {
+  const m = v.match(/^\{\{var:step_(\d+)\}\}$/);
+  if (!m) return v;
+  return '🔗 Linked to Step ' + m[1] + ' value';
 }
 
 // ── Background messenger with retry ─────────────────────────────────────────
@@ -350,6 +395,7 @@ function bindAll() {
   $('clearBtn').addEventListener('click', clearSteps);
   $('nameBtn').addEventListener('click', openNameModal);
   $('saveRecBtn').addEventListener('click', saveRecManual);
+  $('smartRunLiveBtn').addEventListener('click', smartRunLive);
   $('newRecBtn').addEventListener('click', () => showPg('record'));
 
   document.querySelectorAll('.fwc').forEach(el => el.addEventListener('click', () => pickFW(el)));
@@ -424,6 +470,25 @@ function bindAll() {
   $('zpEnvSaveBtn').addEventListener('click', saveZpEnvironment);
   $('zpEnvCancelBtn').addEventListener('click', () => { $('zpEnvForm').style.display = 'none'; _zpEditEnvIdx = -1; });
   $('zpCredToggle').addEventListener('click', () => toggleZpSection('zpCredBody', 'zpCredArrow'));
+  $('zpRdCfgToggle').addEventListener('click', () => toggleZpSection('zpRdCfgBody', 'zpRdCfgArrow'));
+  $('saveRdCfgBtn').addEventListener('click', async () => {
+    G.settings.randomEmailDomain = gv('randomEmailDomain') || '@test.com';
+    G.settings.randomPhonePrefix = gv('randomPhonePrefix') || '+1-555-';
+    await bg('SAVE_SETTINGS', { s: G.settings });
+    toast('Random data config saved', 'pass');
+  });
+  $('seedFlowsBtn').addEventListener('click', async () => {
+    const r = await bg('SEED_FLOWS', {});
+    if (r && r.ok) {
+      const d = await bg('LOAD_ALL', {});
+      G.recordings = d.recordings || [];
+      G.settings = d.settings || G.settings;
+      renderLibrary(); updateCounts();
+      toast('🌱 Seeded 2 flows — Flow 1 set as template', 'pass');
+    } else {
+      toast('Seed failed: ' + (r?.error || 'Unknown'), 'fail');
+    }
+  });
   $('zpPortalToggle').addEventListener('click', () => toggleZpSection('zpPortalBody', 'zpPortalArrow'));
   $('zpEnvToggle').addEventListener('click', () => toggleZpSection('zpEnvBody', 'zpEnvArrow'));
   $('zohoExportBtn').addEventListener('click', openZohoExportModal);
@@ -464,6 +529,8 @@ function bindAll() {
       case 'pushCase':      pushCase(id);           break;
       case 'deleteCase':    deleteCase(id);         break;
       case 'runRec':        runRecording(id);       break;
+      case 'smartRunRec':   smartRunRecording(id);  break;
+      case 'setTemplate':   setProjectTemplate(id); break;
       case 'jumpGenerate':  jumpGenerate(id);       break;
       case 'recToPlatform': recToPlatform(id);      break;
       case 'deleteRec':     deleteRec(id);          break;
@@ -473,6 +540,7 @@ function bindAll() {
       case 'zpDelPortal':  deleteZpPortal(parseInt(id)); break;
       case 'zpEditEnv':    openZpEnvForm(parseInt(id)); break;
       case 'zpDelEnv':     deleteZpEnvironment(parseInt(id)); break;
+      case 'zpToggleEnv':  toggleZpEnvActive(parseInt(id)); break;
     }
   });
 }
@@ -530,7 +598,7 @@ function onBgMsg(msg) {
     renderSteps();
     renderNetCalls();
     $('saveRecBtn').disabled = false;
-    // No need to persist — background.js now auto-saves in stopRec()
+    // Background already saved via stopRec() — just update in-memory state
     const idx = G.recordings.findIndex(r => r.id === msg.rec.id);
     if (idx >= 0) G.recordings[idx] = msg.rec;
     else G.recordings.unshift(msg.rec);
@@ -708,12 +776,14 @@ function renderSteps() {
   wrap.innerHTML = '<div class="steps-list">' + steps.map((s,i) => {
     const cls = ACT_CLS[s.action] || '';
     const ico = ACT_ICO[s.action] || ACT_ICO.default;
-    const tgt = (s.target || s.url || '').slice(0,54);
+    const tgt = escHtml((s.target || s.url || '').slice(0,54));
     let val = '';
     if (s.value && isRandomValue(s.value)) {
       val = '<div class="sv"><span class="rd-tag">' + randomTokenLabel(s.value) + '</span></div>';
+    } else if (s.value && isVarRef(s.value)) {
+      val = '<div class="sv"><span class="rd-tag" style="background:rgba(37,99,235,.15);color:#60a5fa">' + varRefLabel(s.value) + '</span></div>';
     } else if (s.value) {
-      val = '<div class="sv">"' + s.value.slice(0,40) + '"</div>';
+      val = '<div class="sv">"' + escHtml(s.value.slice(0,40)) + '"</div>';
     }
     if (s.sleep) val += '<div class="sv" style="color:var(--t2);font-size:11px">⏱ ' + s.sleep + 'ms</div>';
     return '<div class="step ' + cls + '" data-idx="' + i + '" draggable="true">'
@@ -745,6 +815,7 @@ function editStep(i) {
   G._editStepIdx = i;
   const ask     = $('seRandomAsk');
   const applied = $('seRandomApplied');
+  const linkWrap = $('seLinkWrap');
   if (s.action === 'SEND_KEYS') {
     if (isRandomValue(s.value)) {
       // Random data already applied — show applied state
@@ -759,10 +830,46 @@ function editStep(i) {
       applied.style.display = 'none';
       $('seValue').style.display = '';
     }
+    if (linkWrap) linkWrap.style.display = 'none';
+  } else if (s.action === 'ASSERT_CHECK') {
+    ask.style.display = 'none';
+    applied.style.display = 'none';
+    // Show link-to-step option for assertions
+    if (linkWrap) {
+      linkWrap.style.display = 'block';
+      const linkSel = $('seLinkStep');
+      if (linkSel) {
+        linkSel.innerHTML = '<option value="">— static value —</option>';
+        // Find all SEND_KEYS steps with random values before this step
+        G.live.steps.forEach((ps, pi) => {
+          if (pi < i && ps.action === 'SEND_KEYS' && isRandomValue(ps.value)) {
+            const label = 'Step ' + (pi+1) + ': ' + randomTokenLabel(ps.value) + ' → ' + (ps.text || ps.target || '').slice(0,30);
+            const opt = document.createElement('option');
+            opt.value = '{{var:step_' + ps.id + '}}';
+            opt.textContent = label;
+            if (s.value === opt.value) opt.selected = true;
+            linkSel.appendChild(opt);
+          }
+        });
+        linkSel.onchange = function() {
+          if (this.value) {
+            $('seValue').value = this.value;
+            $('seValue').style.display = 'none';
+          } else {
+            $('seValue').style.display = '';
+            if (isVarRef($('seValue').value)) $('seValue').value = s.text || '';
+          }
+        };
+        if (isVarRef(s.value)) {
+          $('seValue').style.display = 'none';
+        }
+      }
+    }
   } else {
     ask.style.display = 'none';
     applied.style.display = 'none';
     $('seValue').style.display = '';
+    if (linkWrap) linkWrap.style.display = 'none';
   }
   openModal('stepEditModal');
 }
@@ -919,6 +1026,8 @@ function renderLibrary() {
   wrap.innerHTML = G.recordings.map(r => {
     const steps = r.steps  || [];
     const nets  = r.network|| [];
+    const isTemplate = G.settings.zpProjectTemplate === r.id;
+    const tplBadge = isTemplate ? ' <span style="color:#00d4aa;font-size:9px;font-weight:700;letter-spacing:.3px">📐 TEMPLATE</span>' : '';
     let preview = steps.slice(0,4).map((s,i) =>
       '<div class="rprow"><div class="rpn">'+(i+1)+'</div>'
       + '<span style="font-size:12px">'+(ACT_ICO[s.action]||'⚡')+'</span>'
@@ -927,17 +1036,17 @@ function renderLibrary() {
       + '</div>'
     ).join('');
     if (steps.length > 4) preview += '<div style="font-size:10.5px;color:var(--t3);padding-left:22px">+' + (steps.length-4) + ' more</div>';
-    return '<div class="rcard">'
+    return '<div class="rcard"' + (isTemplate ? ' style="border:1px solid rgba(0,212,170,.3)"' : '') + '>'
       + '<div class="rcard-hd">'
         + '<div class="rthumb" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">🖥️</div>'
-        + '<div class="ri" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><div class="rname">'+r.name+'</div>'
+        + '<div class="ri" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><div class="rname">'+r.name+ tplBadge +'</div>'
           + '<div class="rmeta">'+steps.length+' steps · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
         + '<div class="racts">'
           + '<button class="ia edit" data-action="loadRec"        data-id="'+r.id+'" title="Edit recording">📝</button>'
           + '<button class="ia add"  data-action="runRec"         data-id="'+r.id+'" title="Run test">▶</button>'
-          + '<button class="ia gen"  data-action="jumpGenerate"   data-id="'+r.id+'" title="Generate code">⚡</button>'
+          + '<button class="ia add"  data-action="smartRunRec"    data-id="'+r.id+'" title="Smart Run (portal/project auto-detect)" style="font-size:12px">🧠</button>'
+          + '<button class="ia'+(isTemplate?' add':'')+'"      data-action="setTemplate"    data-id="'+r.id+'" title="'+(isTemplate?'Currently the project template':'Set as project creation template')+'" style="font-size:11px">'+(isTemplate?'📐':'📐')+'</button>'
           + '<button class="ia"      data-action="renameRec"      data-id="'+r.id+'" title="Rename" style="font-size:11px">✏</button>'
-          + '<button class="ia push" data-action="recToPlatform"  data-id="'+r.id+'" title="Push to platform">↑</button>'
           + '<button class="ia del"  data-action="deleteRec"      data-id="'+r.id+'" title="Delete">✕</button>'
         + '</div>'
       + '</div>'
@@ -949,8 +1058,30 @@ function renderLibrary() {
 async function deleteRec(id) {
   await bg('DEL_REC', {id});  // deletes locally + syncs DELETE to WEBAPI
   G.recordings = G.recordings.filter(r => r.id !== id);
+  // Clear template reference if deleted recording was the template
+  if (G.settings.zpProjectTemplate === id) {
+    G.settings.zpProjectTemplate = '';
+    await bg('SAVE_SETTINGS', { s: G.settings });
+  }
   renderLibrary(); updateCounts();
   toast('Deleted', 'info');
+}
+
+async function setProjectTemplate(id) {
+  const rec = G.recordings.find(r => r.id === id);
+  if (!rec) return;
+  // Toggle: if already template, unset it
+  if (G.settings.zpProjectTemplate === id) {
+    G.settings.zpProjectTemplate = '';
+    await bg('SAVE_SETTINGS', { s: G.settings });
+    renderLibrary();
+    toast('📐 Template cleared', 'info');
+  } else {
+    G.settings.zpProjectTemplate = id;
+    await bg('SAVE_SETTINGS', { s: G.settings });
+    renderLibrary();
+    toast('📐 "' + rec.name + '" set as project creation template', 'pass');
+  }
 }
 
 function jumpGenerate(id) {
@@ -1020,6 +1151,51 @@ async function runRecording(id) {
   toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + rec.name, r.pass ? 'pass' : 'fail');
 }
 
+// Smart Run — conditional portal/project handling, then replay
+async function smartRunRecording(id) {
+  const rec = G.recordings.find(r => r.id === id);
+  if (!rec) { toast('Recording not found','fail'); return; }
+  toast('🧠 Smart Run: ' + rec.name, 'info');
+  setTimeout(() => window.close(), 300);
+  const fakeCase = {
+    id:              'smart_' + rec.id,
+    name:            rec.name,
+    type:            'WEB',
+    webUrl:          rec.startUrl || rec.steps[0]?.url || '',
+    _recordingSteps: rec.steps,
+    _projectName:    rec._projectName || '',
+    _portal:         rec._portal || '',
+    _projectId:      rec._projectId || '',
+    method:          'GET',
+    expectedStatus:  200
+  };
+  const r = await bg('SMART_RUN', { c: fakeCase });
+  showRunResult({ name: rec.name }, r);
+  const actions = r.smartActions ? r.smartActions.map(a => a.action).join(' → ') : '';
+  toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + rec.name + (actions ? ' [' + actions + ']' : ''), r.pass ? 'pass' : 'fail');
+}
+
+// Smart Run the LIVE recording
+async function smartRunLive() {
+  if (!G.live.steps || G.live.steps.length === 0) { toast('No steps to run','fail'); return; }
+  toast('🧠 Smart Run live recording...', 'info');
+  setTimeout(() => window.close(), 300);
+  const fakeCase = {
+    id:              'smart_live_' + Date.now(),
+    name:            G.live.name || 'Live Flow',
+    type:            'WEB',
+    webUrl:          G.live.startUrl || G.live.steps[0]?.url || '',
+    _recordingSteps: G.live.steps,
+    _projectName:    '',
+    method:          'GET',
+    expectedStatus:  200
+  };
+  const r = await bg('SMART_RUN', { c: fakeCase });
+  showRunResult({ name: fakeCase.name }, r);
+  const actions = r.smartActions ? r.smartActions.map(a => a.action).join(' → ') : '';
+  toast((r.pass ? '✓ Pass' : '✗ Fail') + (actions ? ' [' + actions + ']' : ''), r.pass ? 'pass' : 'fail');
+}
+
 // ═══════════════════════════════════════════════════
 //  GENERATE
 // ═══════════════════════════════════════════════════
@@ -1070,7 +1246,8 @@ async function doGenerate() {
   if (!id) { toast('Select a recording first', 'fail'); return; }
   const rec = G.recordings.find(r => r.id === id);
   if (!rec?.steps?.length) { toast('Recording has no steps', 'fail'); return; }
-  const r = await bg('GEN_CODE', { rec, fw: G.genFW, lang: G.genLang });
+  const recWithCfg = { ...rec, _emailDomain: G.settings.randomEmailDomain || '@test.com', _phonePrefix: G.settings.randomPhonePrefix || '+1-555-' };
+  const r = await bg('GEN_CODE', { rec: recWithCfg, fw: G.genFW, lang: G.genLang });
   if (r?.code) {
     G.genCode = r.code;
     $('codeLbl').textContent    = G.genFW + ' / ' + G.genLang;
@@ -1344,6 +1521,8 @@ function applySettings() {
   sv('zpClientId', G.settings.zpClientId || '');
   sv('zpClientSecret', G.settings.zpClientSecret || '');
   sv('zohoToken', G.settings.zohoToken || '');
+  sv('randomEmailDomain', G.settings.randomEmailDomain || '@test.com');
+  sv('randomPhonePrefix', G.settings.randomPhonePrefix || '+1-555-');
   if (G.settings.zpClientId || G.settings.zpClientSecret) {
     const ti = $('zpTokenInfo');
     if (ti) ti.style.display = 'block';
@@ -1517,7 +1696,8 @@ function pickRdType(el) {
 }
 
 function renderRdConfig() {
-  $('rdLenConfig').style.display   = (_rdType === 'string' || _rdType === 'number' || _rdType === 'paragraph') ? '' : 'none';
+  const needsLen = _rdType === 'string' || _rdType === 'number' || _rdType === 'paragraph';
+  $('rdLenConfig').style.display   = needsLen ? '' : 'none';
   $('rdEmailConfig').style.display = _rdType === 'email' ? '' : 'none';
   $('rdXssConfig').style.display   = _rdType === 'xss' ? '' : 'none';
   // Adjust slider range per type
@@ -1548,10 +1728,12 @@ function renderXssList() {
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function applyRandomData() {
+  const NO_LEN = new Set(['email','taskname','bugname','projectname','username','phone','uuid','timestamp']);
   let token;
-  if (_rdType === 'xss')        token = '{{random:xss:' + _rdXssIdx + '}}';
-  else if (_rdType === 'email') token = '{{random:email}}';
-  else                          token = '{{random:' + _rdType + ':' + _rdLen + '}}';
+  if (_rdType === 'xss')            token = '{{random:xss:' + _rdXssIdx + '}}';
+  else if (_rdType === 'date')      token = '{{random:date:any}}';
+  else if (NO_LEN.has(_rdType))     token = '{{random:' + _rdType + '}}';
+  else                              token = '{{random:' + _rdType + ':' + _rdLen + '}}';
   $('seValue').value = token;
   $('seValue').style.display = 'none';
   // Switch to applied state
@@ -1714,10 +1896,13 @@ function renderZpEnvironments() {
     + '<button class="btn btn-dark btn-xs" id="zpEnvAddTopBtn">+ Add</button></div>';
   envs.forEach((env, i) => {
     const label = typeof env === 'string' ? env : env.url;
-    html += '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--rs);margin-bottom:4px">'
+    const isActive = env.active;
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--glass);border:1px solid ' + (isActive ? '#00d4aa' : 'var(--glassborder)') + ';border-radius:var(--rs);margin-bottom:4px">'
       + '<div style="flex:1;min-width:0">'
         + '<div style="font-size:11.5px;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:\'DM Mono\',monospace">' + escHtml(label) + '</div>'
+        + (isActive ? '<div style="font-size:9px;color:#00d4aa;margin-top:2px">● Active for replay</div>' : '')
       + '</div>'
+      + '<button class="ia" data-action="zpToggleEnv" data-id="' + i + '" title="' + (isActive ? 'Deactivate' : 'Set as active') + '" style="font-size:12px">' + (isActive ? '✅' : '⬜') + '</button>'
       + '<button class="ia edit" data-action="zpEditEnv" data-id="' + i + '" title="Edit">✏️</button>'
       + '<button class="ia del" data-action="zpDelEnv" data-id="' + i + '" title="Delete">🗑</button>'
       + '</div>';
@@ -1762,6 +1947,18 @@ async function deleteZpEnvironment(idx) {
   await bg('SAVE_SETTINGS', { s: G.settings });
   renderZpEnvironments();
   toast('Environment removed', 'info');
+}
+
+async function toggleZpEnvActive(idx) {
+  if (!G.settings.zpEnvironments) return;
+  G.settings.zpEnvironments.forEach((env, i) => {
+    if (typeof env === 'string') G.settings.zpEnvironments[i] = { url: env, active: i === idx };
+    else env.active = (i === idx) ? !env.active : false;
+  });
+  await bg('SAVE_SETTINGS', { s: G.settings });
+  renderZpEnvironments();
+  const active = G.settings.zpEnvironments.find(e => e.active);
+  toast(active ? 'Active: ' + active.url : 'No active environment', 'info');
 }
 
 // ── ZP Section Toggles ──────────────────────────────
@@ -1864,7 +2061,8 @@ async function doZohoExport() {
     stepsJson = JSON.stringify({ name: rec.name, steps: rec.steps, startUrl: rec.startUrl, network: rec.network }, null, 2);
   }
   if (attachCode) {
-    const codeR = await bg('GEN_CODE', { rec, fw: G.settings.fw, lang: G.settings.lang });
+    const recWithCfg2 = { ...rec, _emailDomain: G.settings.randomEmailDomain || '@test.com', _phonePrefix: G.settings.randomPhonePrefix || '+1-555-' };
+    const codeR = await bg('GEN_CODE', { rec: recWithCfg2, fw: G.settings.fw, lang: G.settings.lang });
     if (codeR?.code) {
       codeText = codeR.code;
       const ext = { javascript:'.js', typescript:'.ts', python:'.py', java:'.java', csharp:'.cs' }[G.settings.lang] || '.js';
@@ -2184,7 +2382,7 @@ async function runZohoTask() {
       ...result
     };
     G.results.unshift(run);
-    await bg('SAVE_RESULTS', { results: G.results });
+    await bg('SAVE_RESULT', { r: run });
 
     // Upload report back to ZP
     const { token, portal, dc } = getZohoCreds();
@@ -2217,8 +2415,8 @@ async function runZohoTask() {
     $('runMBody').innerHTML = '<div style="font-size:12px">'
       + '<div><strong>Recording:</strong> ' + escHtml(rec.name) + '</div>'
       + '<div><strong>Status:</strong> ' + (result.pass ? '<span style="color:#22c55e">PASSED</span>' : '<span style="color:#ef4444">FAILED</span>') + '</div>'
-      + '<div><strong>Steps:</strong> ' + (result.stepsRun || 0) + '/' + (rec.steps?.length || 0) + '</div>'
-      + '<div><strong>Duration:</strong> ' + dur(result.duration || 0) + '</div>'
+      + '<div><strong>Steps:</strong> ' + (result.steps?.length || 0) + '/' + (rec.steps?.length || 0) + '</div>'
+      + '<div><strong>Duration:</strong> ' + dur(result.ms || 0) + '</div>'
       + (result.error ? '<div style="color:#ef4444;margin-top:8px"><strong>Error:</strong> ' + escHtml(result.error) + '</div>' : '')
       + '</div>';
     toast(result.pass ? '✅ Test passed!' : '❌ Test failed', result.pass ? 'pass' : 'fail');
