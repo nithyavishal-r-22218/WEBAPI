@@ -123,7 +123,7 @@ const IMPACT_RULES = [
     riskLevel: 'MEDIUM',
   },
   {
-    match: (f) => f.includes('index.js'),
+    match: (f) => f === 'index.js' || f.endsWith('/index.js'),
     impactedRoutes: ['ALL'],
     impactedComponents: ['server bootstrap', 'rate limiting', 'CORS', 'global error handler'],
     testSuites: ['jobs.test.js', 'recordings.test.js', 'testCases.test.js',
