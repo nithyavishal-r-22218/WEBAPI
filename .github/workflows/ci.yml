@@ -1,0 +1,284 @@
+name: GodMode — Diff, Impact Analysis & Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ─── Phase 1: Diff & Impact Analysis ───────────────────────────────────────
+  impact-analysis:
+    name: Repository Diff & Impact Analysis
+    runs-on: ubuntu-latest
+    outputs:
+      impact_map: ${{ steps.analyze.outputs.impact_map }}
+      suites_to_run: ${{ steps.analyze.outputs.suites_to_run }}
+      risk_summary: ${{ steps.analyze.outputs.risk_summary }}
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Determine base ref
+        id: base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base_ref=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+            git fetch origin ${{ github.base_ref }}
+          else
+            # For push events, compare against the previous commit
+            echo "base_ref=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run diff analyzer
+        id: analyze
+        working-directory: godmode-fixed/backend
+        env:
+          GODMODE_API_KEY: ci-dummy-key
+          IMPACT_MAP_OUT: /tmp/impact-map.json
+        run: |
+          BASE_REF="${{ steps.base.outputs.base_ref }}"
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            BASE_REF="HEAD~1"
+          fi
+
+          node scripts/diff-analyzer.js "$BASE_REF" HEAD > /tmp/impact-map.json 2>/tmp/diff-analyzer.log || true
+          cat /tmp/diff-analyzer.log >&2
+
+          # Extract fields for downstream jobs
+          SUITES=$(jq -r '.summary.suitesToRun | join(",")' /tmp/impact-map.json 2>/dev/null || echo "ALL")
+          HIGH=$(jq -r '.summary.highRisk' /tmp/impact-map.json 2>/dev/null || echo "0")
+          MED=$(jq -r '.summary.mediumRisk' /tmp/impact-map.json 2>/dev/null || echo "0")
+          LOW=$(jq -r '.summary.lowRisk' /tmp/impact-map.json 2>/dev/null || echo "0")
+          TOTAL=$(jq -r '.summary.totalChanged' /tmp/impact-map.json 2>/dev/null || echo "0")
+
+          echo "suites_to_run=$SUITES" >> "$GITHUB_OUTPUT"
+          echo "risk_summary=Total:${TOTAL} High:${HIGH} Medium:${MED} Low:${LOW}" >> "$GITHUB_OUTPUT"
+
+          # Compact the full map for downstream output (strip whitespace)
+          COMPACT=$(jq -c '.' /tmp/impact-map.json 2>/dev/null || echo '{}')
+          echo "impact_map=$COMPACT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload impact map artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: impact-map
+          path: /tmp/impact-map.json
+          retention-days: 30
+
+      - name: Print impact summary
+        run: |
+          echo "## Impact Summary"
+          echo "Risk Breakdown: ${{ steps.analyze.outputs.risk_summary }}"
+          echo "Test Suites to Run: ${{ steps.analyze.outputs.suites_to_run }}"
+
+  # ─── Phase 2+3: Test Suite ──────────────────────────────────────────────────
+  test:
+    name: Run Test Suites
+    runs-on: ubuntu-latest
+    needs: impact-analysis
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: godmode-fixed/backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: godmode-fixed/backend
+        run: npm ci
+
+      - name: Run all test suites
+        id: run_tests
+        working-directory: godmode-fixed/backend
+        env:
+          GODMODE_API_KEY: test-key-for-ci
+        run: |
+          # Run all suites, capture output and exit code
+          set +e
+          node --test \
+            __tests__/api.test.js \
+            __tests__/jobs.test.js \
+            __tests__/recordings.test.js \
+            __tests__/testCases.test.js \
+            __tests__/results.test.js \
+            __tests__/credentials.test.js \
+            __tests__/environments.test.js \
+            2>&1 | tee /tmp/test-output.txt
+          TEST_EXIT=$?
+          set -e
+
+          # Parse pass/fail counts from node:test TAP output
+          PASS=$(grep -c "^ok " /tmp/test-output.txt || echo "0")
+          FAIL=$(grep -c "^not ok " /tmp/test-output.txt || echo "0")
+
+          echo "pass_count=$PASS" >> "$GITHUB_OUTPUT"
+          echo "fail_count=$FAIL" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$TEST_EXIT" >> "$GITHUB_OUTPUT"
+
+          exit $TEST_EXIT
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: /tmp/test-output.txt
+          retention-days: 30
+
+      - name: Generate test result JSON
+        if: always()
+        run: |
+          cat > /tmp/test-result.json <<EOF
+          {
+            "runId": "${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "branch": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "impactSummary": "${{ needs.impact-analysis.outputs.risk_summary }}",
+            "suitesRun": "${{ needs.impact-analysis.outputs.suites_to_run }}",
+            "passed": ${{ steps.run_tests.outputs.pass_count || 0 }},
+            "failed": ${{ steps.run_tests.outputs.fail_count || 0 }},
+            "outcome": "${{ steps.run_tests.outcome }}"
+          }
+          EOF
+          echo "Test result JSON:"
+          cat /tmp/test-result.json
+
+      - name: Upload test result JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-result
+          path: /tmp/test-result.json
+          retention-days: 30
+
+  # ─── Phase 4: PR Comment ────────────────────────────────────────────────────
+  comment:
+    name: Post PR Summary
+    runs-on: ubuntu-latest
+    needs: [impact-analysis, test]
+    if: github.event_name == 'pull_request' && always()
+    steps:
+      - name: Download test output
+        uses: actions/download-artifact@v4
+        with:
+          name: test-output
+          path: /tmp/artifacts
+        continue-on-error: true
+
+      - name: Download impact map
+        uses: actions/download-artifact@v4
+        with:
+          name: impact-map
+          path: /tmp/artifacts
+        continue-on-error: true
+
+      - name: Build and post PR comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Read impact map
+            let impactMap = { summary: {}, impactMap: [] };
+            try {
+              impactMap = JSON.parse(fs.readFileSync('/tmp/artifacts/impact-map.json', 'utf8'));
+            } catch {}
+
+            // Read test output
+            let testOutput = '';
+            try {
+              testOutput = fs.readFileSync('/tmp/artifacts/test-output.txt', 'utf8');
+            } catch {}
+
+            const testStatus = '${{ needs.test.result }}';
+            const statusEmoji = testStatus === 'success' ? '✅' : '❌';
+            const riskSummary = '${{ needs.impact-analysis.outputs.risk_summary }}';
+            const suitesToRun = '${{ needs.impact-analysis.outputs.suites_to_run }}';
+
+            // Build changed files table
+            let changedFilesTable = '';
+            if (impactMap.impactMap && impactMap.impactMap.length > 0) {
+              changedFilesTable = '| File | Layer | Risk | Test Suite |\n|------|-------|------|------------|\n';
+              for (const entry of impactMap.impactMap) {
+                const suites = entry.testSuites.join(', ') || '—';
+                changedFilesTable += `| \`${entry.changedFile}\` | ${entry.layer} | ${entry.riskLevel} | ${suites} |\n`;
+              }
+            } else {
+              changedFilesTable = '_No changed files detected._';
+            }
+
+            // Extract test summary lines
+            const summaryLines = testOutput
+              .split('\n')
+              .filter(l => l.startsWith('# ') || l.includes('pass') || l.includes('fail') || l.includes('duration'))
+              .slice(0, 10)
+              .join('\n');
+
+            const body = [
+              `## ${statusEmoji} GodMode Test Report`,
+              '',
+              `**Branch:** \`${{ github.head_ref }}\`  `,
+              `**Commit:** \`${{ github.event.pull_request.head.sha }}\`  `,
+              `**Test Outcome:** ${testStatus}`,
+              '',
+              '### 📊 Impact Analysis',
+              `**${riskSummary}**`,
+              '',
+              '#### Changed Files & Impact Map',
+              changedFilesTable,
+              '',
+              `**Test Suites Selected:** \`${suitesToRun}\``,
+              '',
+              '### 🧪 Test Results',
+              summaryLines
+                ? '```\n' + summaryLines + '\n```'
+                : '_Test output not available._',
+              '',
+              '---',
+              '_Generated by GodMode Automation Framework CI_',
+            ].join('\n');
+
+            // Find existing comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' &&
+              c.body.includes('GodMode Test Report')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body,
+              });
+            }
