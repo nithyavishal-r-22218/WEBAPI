@@ -1,0 +1,557 @@
+{
+  "id": "e2e_all_actions_test",
+  "name": "E2E All 47 Actions Test",
+  "type": "WEB",
+  "_recordingSteps": [
+    {
+      "id": 1,
+      "action": "NAVIGATE_TO",
+      "target": "https://projects.localzoho.com/portal/ultimatepl#zp/projects/218771000000436647/tasks/custom-view/218771000000057003/list?group_by=tasklist",
+      "value": "",
+      "text": "Navigate to Tasks view",
+      "tagName": "",
+      "url": "https://projects.localzoho.com",
+      "t": 1712700000001
+    },
+    {
+      "id": 2,
+      "action": "GET_CURRENT_URL",
+      "target": "",
+      "value": "",
+      "text": "Get current URL",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000002
+    },
+    {
+      "id": 3,
+      "action": "GET_TITLE",
+      "target": "",
+      "value": "",
+      "text": "Get page title",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000003
+    },
+    {
+      "id": 4,
+      "action": "GET_PAGE_SOURCE",
+      "target": "",
+      "value": "",
+      "text": "Get page source",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000004
+    },
+    {
+      "id": 5,
+      "action": "GET_LAST_ID_FROM_URL",
+      "target": "",
+      "value": "",
+      "text": "Extract last ID from URL",
+      "tagName": "",
+      "url": "https://projects.localzoho.com/portal/ultimatepl#zp/projects/218771000000436647/tasks/custom-view/218771000000057003/list",
+      "t": 1712700000005
+    },
+    {
+      "id": 6,
+      "action": "STORE_VALUES",
+      "target": "",
+      "value": "testStoredValue123",
+      "text": "Store a test value",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000006
+    },
+    {
+      "id": 7,
+      "action": "CONDITIONS",
+      "target": "",
+      "value": "1 === 1",
+      "text": "True condition - next step should run",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000007
+    },
+    {
+      "id": 8,
+      "action": "CUSTOM_JS",
+      "target": "",
+      "value": "document.title",
+      "text": "Execute custom JS to get title",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000008
+    },
+    {
+      "id": 9,
+      "action": "CONDITIONS",
+      "target": "",
+      "value": "1 === 2",
+      "text": "False condition - next step should be SKIPPED",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000009
+    },
+    {
+      "id": 10,
+      "action": "CUSTOM_JS",
+      "target": "",
+      "value": "console.log('THIS SHOULD BE SKIPPED BY CONDITIONS')",
+      "text": "This step should be skipped due to false condition",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000010
+    },
+    {
+      "id": 11,
+      "action": "SCROLL_TO_ELEMENT",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Scroll to task href link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000011
+    },
+    {
+      "id": 12,
+      "action": "MOVE_TO_ELEMENT",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Hover over task link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000012
+    },
+    {
+      "id": 13,
+      "action": "MOVE_TO_ELEMENT_WITHOUT_CLICK",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Move to element without click",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000013
+    },
+    {
+      "id": 14,
+      "action": "GET_TEXT",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Get text of task link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000014
+    },
+    {
+      "id": 15,
+      "action": "GET_CLASS",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Get class of task link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000015
+    },
+    {
+      "id": 16,
+      "action": "GET_ATTRIBUTE",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "data-zpqa",
+      "text": "Get data-zpqa attribute",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000016
+    },
+    {
+      "id": 17,
+      "action": "IS_DISPLAYED",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Check if task link is displayed",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000017
+    },
+    {
+      "id": 18,
+      "action": "IS_ENABLED",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Check if task link is enabled",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000018
+    },
+    {
+      "id": 19,
+      "action": "GET_ELEMENT_SIZE",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Get size of task link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000019
+    },
+    {
+      "id": 20,
+      "action": "MOVE_BY_OFFSET",
+      "target": "",
+      "value": "10,10",
+      "text": "Move mouse by offset 10,10",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000020
+    },
+    {
+      "id": 21,
+      "action": "SCROLL_TO_ELEMENT_AND_CLICK",
+      "target": "[data-zpqa='addtasklist']",
+      "value": "",
+      "text": "Scroll to Add Task List and click",
+      "tagName": "div",
+      "url": "",
+      "t": 1712700000021
+    },
+    {
+      "id": 22,
+      "action": "CLICK",
+      "target": "[data-zpqa='todotitle']",
+      "value": "",
+      "text": "Click tasklist title input",
+      "tagName": "input",
+      "url": "",
+      "t": 1712700000022
+    },
+    {
+      "id": 23,
+      "action": "SEND_KEYS",
+      "target": "[data-zpqa='todotitle']",
+      "value": "E2E_TestList_{{random:projectname}}",
+      "text": "Type tasklist name with random value",
+      "tagName": "input",
+      "url": "",
+      "t": 1712700000023
+    },
+    {
+      "id": 24,
+      "action": "ASSERT_CHECK",
+      "target": "[data-zpqa='todotitle']",
+      "value": "E2E_TestList",
+      "text": "Assert tasklist name contains prefix",
+      "tagName": "input",
+      "url": "",
+      "t": 1712700000024
+    },
+    {
+      "id": 25,
+      "action": "SHORTCUT_KEY",
+      "target": "",
+      "value": "Control+a",
+      "text": "Select all text in input",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000025
+    },
+    {
+      "id": 26,
+      "action": "BACK_SPACE_KEY",
+      "target": "[data-zpqa='todotitle']",
+      "value": "",
+      "text": "Clear with backspace",
+      "tagName": "input",
+      "url": "",
+      "t": 1712700000026
+    },
+    {
+      "id": 27,
+      "action": "SEND_KEYS",
+      "target": "[data-zpqa='todotitle']",
+      "value": "E2E_AllActions_Test",
+      "text": "Type final tasklist name",
+      "tagName": "input",
+      "url": "",
+      "t": 1712700000027
+    },
+    {
+      "id": 28,
+      "action": "ENTER_KEY",
+      "target": "[data-zpqa='todotitle']",
+      "value": "",
+      "text": "Submit tasklist with Enter",
+      "tagName": "input",
+      "url": "",
+      "t": 1712700000028
+    },
+    {
+      "id": 29,
+      "action": "SCROLL_TO_ELEMENT",
+      "target": "[data-zpqa='addtask']",
+      "value": "",
+      "text": "Scroll to Add Task button",
+      "tagName": "div",
+      "url": "",
+      "t": 1712700000029
+    },
+    {
+      "id": 30,
+      "action": "CLICK",
+      "target": "[data-zpqa='addtask']",
+      "value": "",
+      "text": "Click Add Task",
+      "tagName": "div",
+      "url": "",
+      "t": 1712700000030
+    },
+    {
+      "id": 31,
+      "action": "CLICK",
+      "target": "[data-zpqa='taskname']",
+      "value": "",
+      "text": "Click task name input",
+      "tagName": "textarea",
+      "url": "",
+      "t": 1712700000031
+    },
+    {
+      "id": 32,
+      "action": "SEND_KEYS",
+      "target": "[data-zpqa='taskname']",
+      "value": "E2E_Task_AllActions",
+      "text": "Type task name",
+      "tagName": "textarea",
+      "url": "",
+      "t": 1712700000032
+    },
+    {
+      "id": 33,
+      "action": "CLEAR",
+      "target": "[data-zpqa='taskname']",
+      "value": "",
+      "text": "Clear the task name field",
+      "tagName": "textarea",
+      "url": "",
+      "t": 1712700000033
+    },
+    {
+      "id": 34,
+      "action": "SEND_KEYS",
+      "target": "[data-zpqa='taskname']",
+      "value": "E2E_Task_Final",
+      "text": "Re-type task name",
+      "tagName": "textarea",
+      "url": "",
+      "t": 1712700000034
+    },
+    {
+      "id": 35,
+      "action": "CUT_COPY_PASTE_SELECTALL",
+      "target": "",
+      "value": "Control+a",
+      "text": "Select all in task name",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000035
+    },
+    {
+      "id": 36,
+      "action": "CUT_COPY_PASTE_SELECTALL",
+      "target": "",
+      "value": "Control+c",
+      "text": "Copy task name",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000036
+    },
+    {
+      "id": 37,
+      "action": "CLEAR",
+      "target": "[data-zpqa='taskname']",
+      "value": "",
+      "text": "Clear task name again",
+      "tagName": "textarea",
+      "url": "",
+      "t": 1712700000037
+    },
+    {
+      "id": 38,
+      "action": "CUT_COPY_PASTE_SELECTALL",
+      "target": "[data-zpqa='taskname']",
+      "value": "Control+v",
+      "text": "Paste task name back",
+      "tagName": "textarea",
+      "url": "",
+      "t": 1712700000038
+    },
+    {
+      "id": 39,
+      "action": "CLICK",
+      "target": "[data-zpqa='taskadd']",
+      "value": "",
+      "text": "Click Add Task button to submit",
+      "tagName": "button",
+      "url": "",
+      "t": 1712700000039
+    },
+    {
+      "id": 40,
+      "action": "CLICK",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Click task to open detail",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000040
+    },
+    {
+      "id": 41,
+      "action": "IS_SELECTED",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Check if task link is selected",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000041
+    },
+    {
+      "id": 42,
+      "action": "ESCAPE_KEY",
+      "target": "",
+      "value": "",
+      "text": "Press Escape to close detail",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000042
+    },
+    {
+      "id": 43,
+      "action": "RIGHT_CLICK",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Right-click on task link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000043
+    },
+    {
+      "id": 44,
+      "action": "ESCAPE_KEY",
+      "target": "",
+      "value": "",
+      "text": "Press Escape to close context menu",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000044
+    },
+    {
+      "id": 45,
+      "action": "DOUBLE_CLICK",
+      "target": "[data-zpqa='taskhreflink']",
+      "value": "",
+      "text": "Double-click on task link",
+      "tagName": "a",
+      "url": "",
+      "t": 1712700000045
+    },
+    {
+      "id": 46,
+      "action": "ESCAPE_KEY",
+      "target": "",
+      "value": "",
+      "text": "Press Escape to close any popup",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000046
+    },
+    {
+      "id": 47,
+      "action": "ASSOCIATE_ACTION_GROUP",
+      "target": "",
+      "value": "TaskCreationGroup",
+      "text": "Associate with action group",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000047
+    },
+    {
+      "id": 48,
+      "action": "ASSOCIATE_API",
+      "target": "",
+      "value": "createTask_API",
+      "text": "Associate with API call",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000048
+    },
+    {
+      "id": 49,
+      "action": "COMPARE_PDF_CONTENT",
+      "target": "",
+      "value": "",
+      "text": "Compare PDF content (browser stub)",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000049
+    },
+    {
+      "id": 50,
+      "action": "COMPARE_PDF_PIXELS",
+      "target": "",
+      "value": "",
+      "text": "Compare PDF pixels (browser stub)",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000050
+    },
+    {
+      "id": 51,
+      "action": "REFRESH",
+      "target": "",
+      "value": "",
+      "text": "Refresh the page",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000051
+    },
+    {
+      "id": 52,
+      "action": "GET",
+      "target": "https://projects.localzoho.com/portal/ultimatepl#zp/projects/218771000000436647/tasks/custom-view/218771000000057003/list?group_by=tasklist",
+      "value": "",
+      "text": "GET (load) Tasks URL",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000052
+    },
+    {
+      "id": 53,
+      "action": "DEFAULT_FRAME",
+      "target": "",
+      "value": "",
+      "text": "Switch to default frame",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000053
+    },
+    {
+      "id": 54,
+      "action": "BACK",
+      "target": "",
+      "value": "",
+      "text": "Go back in history",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000054
+    },
+    {
+      "id": 55,
+      "action": "FORWARD",
+      "target": "",
+      "value": "",
+      "text": "Go forward in history",
+      "tagName": "",
+      "url": "",
+      "t": 1712700000055
+    }
+  ]
+}

@@ -190,15 +190,19 @@ button:active::after{opacity:1;transition:opacity 0s}
 .ri{flex:1;min-width:0}
 .rname{font-size:12.5px;font-weight:600;color:var(--tx)}
 .rmeta{font-size:10.5px;color:var(--t3);margin-top:1px}
-.racts{display:flex;gap:4px}
-.ia{width:28px;height:28px;border-radius:var(--rs);border:1px solid var(--glassborder);background:var(--glass3);color:var(--t3);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .25s cubic-bezier(.4,0,.2,1);flex-shrink:0}
-.ia:hover{background:var(--glass);border-color:rgba(59,130,246,.2);color:var(--tx);transform:translateY(-2px) scale(1.08);box-shadow:var(--sh)}
-.ia:active{transform:scale(.92)}
-.ia.gen:hover{background:var(--blue-bg);border-color:rgba(79,124,255,.2);color:var(--blue)}
-.ia.add:hover{background:var(--mint-bg);border-color:rgba(0,200,150,.2);color:var(--mint)}
-.ia.edit:hover{background:var(--lilac-bg);border-color:rgba(167,139,250,.2);color:var(--lilac)}
-.ia.push:hover{background:var(--lilac-bg);border-color:rgba(167,139,250,.2);color:var(--lilac)}
-.ia.del:hover{background:var(--red-bg);border-color:rgba(240,91,91,.2);color:var(--red)}
+.racts{display:flex;gap:3px}
+.ia{width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:var(--t3);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s cubic-bezier(.4,0,.2,1);flex-shrink:0}
+.ia svg{pointer-events:none;flex-shrink:0}
+.ia:hover{transform:translateY(-1px);color:var(--tx)}
+.ia:active{transform:scale(.9)}
+.ia.ia-run{color:#64748b}.ia.ia-run:hover{background:rgba(16,185,129,.12);color:#10b981}
+.ia.ia-smart{color:#64748b}.ia.ia-smart:hover{background:rgba(59,130,246,.12);color:#3b82f6}
+.ia.ia-tpl{color:#64748b}.ia.ia-tpl:hover{background:rgba(0,212,170,.12);color:#00d4aa}
+.ia.ia-tpl.active{color:#00d4aa}
+.ia.ia-edit{color:#64748b}.ia.ia-edit:hover{background:rgba(139,92,246,.12);color:#8b5cf6}
+.ia.ia-rename{color:#64748b}.ia.ia-rename:hover{background:rgba(245,158,11,.12);color:#f59e0b}
+.ia.ia-del{color:#94a3b8}.ia.ia-del:hover{background:rgba(239,68,68,.1);color:#ef4444}
+.tpl-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 7px 1px 5px;border-radius:4px;background:rgba(0,212,170,.12);color:#00d4aa;font-size:9px;font-weight:700;letter-spacing:.4px;margin-left:6px;vertical-align:middle}
 .rpreview{padding:8px 13px 10px;border-top:1px solid var(--b);background:var(--glass3);max-height:88px;overflow-y:auto}
 .rprow{display:flex;align-items:center;gap:7px;font-size:11px;padding:2px 0}
 .rpn{width:15px;height:15px;border-radius:50%;background:var(--glass3);color:var(--t3);display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:700;flex-shrink:0}
@@ -395,8 +399,6 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
     </div>
     <div class="hdr-r">
       <div class="conn-pill" id="apiPill"><span class="dot" id="apiDot"></span><span id="apiTxt">Offline</span></div>
-      <button class="rec-pill" id="recPill"><div class="rdot" id="rdot"></div><span id="recTxt">● Rec</span></button>
-      <button class="rec-pill" id="inspectBtn" style="background:linear-gradient(135deg,#3b82f6,#6366f1)">🎯 Inspect</button>
     </div>
   </div>
   <div class="hstats">
@@ -441,7 +443,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div class="sbtn-row">
         <button class="btn btn-ghost btn-xs" id="clearBtn">Clear</button>
         <button class="btn btn-outline btn-xs" id="nameBtn">✏ Name</button>
-        <button class="btn btn-outline btn-xs" id="smartRunLiveBtn" title="Smart Run — auto-detect portal & project">🧠 Smart Run</button>
+        <button class="btn btn-outline btn-xs" id="runLiveBtn" title="Run the current recording">▶ Run</button>
         <button class="btn btn-dark btn-xs" id="saveRecBtn" disabled>Save</button>
       </div>
     </div>
@@ -588,15 +590,6 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
         </div>
         <div style="font-size:10px;color:var(--t3);margin-bottom:8px">Used in {{random:email}} and {{random:phone}} during recording &amp; replay</div>
         <button class="btn btn-dark btn-sm" id="saveRdCfgBtn">Save</button>
-      </div>
-    </div>
-
-    <!-- SEED SAMPLE FLOWS -->
-    <div class="scard" style="margin-bottom:10px">
-      <div class="scard-hd">
-        <div class="scard-ico" style="background:linear-gradient(135deg,rgba(52,211,153,.12),rgba(59,130,246,.12))">🌱</div>
-        <div style="flex:1"><div style="font-size:13px;font-weight:600">Sample Flows</div><div style="font-size:10.5px;color:var(--t3);margin-top:1px">Seed Flow 1 (Create Project) + Flow 2 (Tasklist → Task → Comment)</div></div>
-        <button class="btn btn-outline btn-xs" id="seedFlowsBtn" title="Create sample recordings and set Flow 1 as template">🌱 Seed</button>
       </div>
     </div>
 

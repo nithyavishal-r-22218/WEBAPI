@@ -384,7 +384,7 @@ async function boot() {
 // ═══════════════════════════════════════════════════
 function bindAll() {
   $('apiPill').addEventListener('click', () => checkApi(true));
-  $('recPill').addEventListener('click', handleRecClick);
+  if ($('recPill')) $('recPill').addEventListener('click', handleRecClick);
   if ($('inspectBtn')) $('inspectBtn').addEventListener('click', handleInspectClick);
 
   [['t-record','record'],['t-library','library'],['t-generate','generate'],
@@ -395,7 +395,7 @@ function bindAll() {
   $('clearBtn').addEventListener('click', clearSteps);
   $('nameBtn').addEventListener('click', openNameModal);
   $('saveRecBtn').addEventListener('click', saveRecManual);
-  $('smartRunLiveBtn').addEventListener('click', smartRunLive);
+  $('runLiveBtn').addEventListener('click', runLive);
   $('newRecBtn').addEventListener('click', () => showPg('record'));
 
   document.querySelectorAll('.fwc').forEach(el => el.addEventListener('click', () => pickFW(el)));
@@ -476,18 +476,6 @@ function bindAll() {
     G.settings.randomPhonePrefix = gv('randomPhonePrefix') || '+1-555-';
     await bg('SAVE_SETTINGS', { s: G.settings });
     toast('Random data config saved', 'pass');
-  });
-  $('seedFlowsBtn').addEventListener('click', async () => {
-    const r = await bg('SEED_FLOWS', {});
-    if (r && r.ok) {
-      const d = await bg('LOAD_ALL', {});
-      G.recordings = d.recordings || [];
-      G.settings = d.settings || G.settings;
-      renderLibrary(); updateCounts();
-      toast('🌱 Seeded 2 flows — Flow 1 set as template', 'pass');
-    } else {
-      toast('Seed failed: ' + (r?.error || 'Unknown'), 'fail');
-    }
   });
   $('zpPortalToggle').addEventListener('click', () => toggleZpSection('zpPortalBody', 'zpPortalArrow'));
   $('zpEnvToggle').addEventListener('click', () => toggleZpSection('zpEnvBody', 'zpEnvArrow'));
@@ -750,14 +738,14 @@ function setRecUI(isRec) {
   const title=$('heroTitle'), sub=$('heroSub'), txt=$('recTxt');
   const inspBtn = $('inspectBtn');
   if (isRec) {
-    ring.classList.add('on'); pill.classList.add('on');
-    ico.textContent = '⏹'; txt.textContent = '■ Stop';
+    ring.classList.add('on'); if(pill) pill.classList.add('on');
+    ico.textContent = '⏹'; if(txt) txt.textContent = '■ Stop';
     title.textContent = 'Recording in progress…';
     sub.textContent   = 'Click ■ Stop when done · Double-click to assert';
     if (inspBtn) { inspBtn.disabled = true; inspBtn.style.opacity = '0.4'; inspBtn.style.pointerEvents = 'none'; }
   } else {
-    ring.classList.remove('on'); pill.classList.remove('on');
-    ico.textContent = '⏺'; txt.textContent = '● Rec';
+    ring.classList.remove('on'); if(pill) pill.classList.remove('on');
+    ico.textContent = '⏺'; if(txt) txt.textContent = '● Rec';
     const n = G.live.steps.length;
     title.textContent = n > 0 ? '✓ Done — ' + n + ' steps saved to Library' : 'Click to Start Recording';
     sub.textContent   = n > 0 ? 'View in Library · Generate code · Run test' : 'Captures clicks · inputs · navigation';
@@ -998,6 +986,11 @@ function initStepDrag() {
 function loadRecording(id) {
   const rec = G.recordings.find(r => r.id === id);
   if (!rec) { toast('Recording not found', 'fail'); return; }
+  // Template recordings can only be viewed, not edited
+  if (G.settings.zpProjectTemplate === id) {
+    toast('Unset template to edit this recording', 'fail');
+    return;
+  }
   G.live.steps   = [...(rec.steps || [])];
   G.live.network = [...(rec.network || [])];
   G.live.name    = rec.name || '';
@@ -1016,6 +1009,83 @@ function loadRecording(id) {
 // ═══════════════════════════════════════════════════
 //  LIBRARY
 // ═══════════════════════════════════════════════════
+const LIB_PAGE_SIZE = 50;
+let _libSorted = [];
+let _libRendered = 0;
+
+// Modern Lucide-style SVG icons (16px, 1.5px stroke)
+const _sv = (d) => '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'+d+'</svg>';
+const ICO = {
+  edit:     _sv('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'),
+  play:     _sv('<polygon points="6,3 20,12 6,21" fill="currentColor" stroke="none"/>'),
+  smart:    _sv('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="currentColor" stroke="none" opacity=".85"/>'),
+  tpl:      _sv('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
+  tplOn:    _sv('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" fill="currentColor"/>'),
+  rename:   _sv('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>'),
+  trash:    _sv('<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/>'),
+};
+
+function _buildCard(r) {
+  const steps = r.steps  || [];
+  const isTemplate = G.settings.zpProjectTemplate === r.id;
+  const tplBadge = isTemplate ? '<span class="tpl-badge"><svg width="10" height="10" viewBox="0 0 24 24" fill="#00d4aa" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>TEMPLATE</span>' : '';
+  if (isTemplate) {
+    return '<div class="rcard" style="border:1px solid rgba(0,212,170,.25);background:linear-gradient(135deg,rgba(0,212,170,.05),rgba(0,212,170,.02))">'
+      + '<div class="rcard-hd">'
+        + '<div class="rthumb" style="cursor:default;background:linear-gradient(135deg,#00d4aa,#10b981)"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></div>'
+        + '<div class="ri"><div class="rname">'+r.name+ tplBadge +'</div>'
+          + '<div class="rmeta">'+steps.length+' steps · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
+        + '<div class="racts">'
+          + '<button class="ia ia-run"  data-action="runRec"       data-id="'+r.id+'" title="Run test">'+ICO.play+'</button>'
+          + '<button class="ia ia-smart" data-action="smartRunRec" data-id="'+r.id+'" title="Smart Run">'+ICO.smart+'</button>'
+          + '<button class="ia ia-tpl active" data-action="setTemplate" data-id="'+r.id+'" title="Unset template">'+ICO.tplOn+'</button>'
+        + '</div>'
+      + '</div>'
+      + '</div>';
+  }
+  let preview = steps.slice(0,4).map((s,i) =>
+    '<div class="rprow"><div class="rpn">'+(i+1)+'</div>'
+    + '<span style="font-size:12px">'+(ACT_ICO[s.action]||'⚡')+'</span>'
+    + '<span style="font-weight:600;font-size:11.5px" title="'+(ACT_DESC[s.action]||'')+'">'+s.action+'</span>'
+    + '<span style="color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:DM Mono,monospace">'+(s.target||s.url||'').slice(0,46)+'</span>'
+    + '</div>'
+  ).join('');
+  if (steps.length > 4) preview += '<div style="font-size:10.5px;color:var(--t3);padding-left:22px">+' + (steps.length-4) + ' more</div>';
+  return '<div class="rcard">'
+    + '<div class="rcard-hd">'
+      + '<div class="rthumb" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>'
+      + '<div class="ri" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><div class="rname">'+r.name+'</div>'
+        + '<div class="rmeta">'+steps.length+' steps · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
+      + '<div class="racts">'
+        + '<button class="ia ia-edit"   data-action="loadRec"        data-id="'+r.id+'" title="Edit">'+ICO.edit+'</button>'
+        + '<button class="ia ia-run"    data-action="runRec"         data-id="'+r.id+'" title="Run">'+ICO.play+'</button>'
+        + '<button class="ia ia-smart"  data-action="smartRunRec"    data-id="'+r.id+'" title="Smart Run">'+ICO.smart+'</button>'
+        + '<button class="ia ia-tpl"    data-action="setTemplate"    data-id="'+r.id+'" title="Set as template">'+ICO.tpl+'</button>'
+        + '<button class="ia ia-rename" data-action="renameRec"      data-id="'+r.id+'" title="Rename">'+ICO.rename+'</button>'
+        + '<button class="ia ia-del"    data-action="deleteRec"      data-id="'+r.id+'" title="Delete">'+ICO.trash+'</button>'
+      + '</div>'
+    + '</div>'
+    + '<div class="rpreview" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">'+preview+'</div>'
+    + '</div>';
+}
+
+function _renderLibBatch() {
+  const wrap = $('libWrap');
+  const batch = _libSorted.slice(_libRendered, _libRendered + LIB_PAGE_SIZE);
+  if (!batch.length) return;
+  const old = wrap.querySelector('.lib-load-more');
+  if (old) old.remove();
+  wrap.insertAdjacentHTML('beforeend', batch.map(r => _buildCard(r)).join(''));
+  _libRendered += batch.length;
+  const remaining = _libSorted.length - _libRendered;
+  if (remaining > 0) {
+    wrap.insertAdjacentHTML('beforeend',
+      '<div class="lib-load-more" style="text-align:center;padding:10px">'
+      + '<button onclick="_renderLibBatch()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--t2);padding:8px 20px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600">'
+      + 'Show more ('+remaining+' remaining)</button></div>');
+  }
+}
+
 function renderLibrary() {
   $('tb-lib').textContent = G.recordings.length;
   const wrap = $('libWrap');
@@ -1023,46 +1093,25 @@ function renderLibrary() {
     wrap.innerHTML = '<div class="empty"><div class="ei">📂</div><div class="et">No recordings yet</div></div>';
     return;
   }
-  wrap.innerHTML = G.recordings.map(r => {
-    const steps = r.steps  || [];
-    const nets  = r.network|| [];
-    const isTemplate = G.settings.zpProjectTemplate === r.id;
-    const tplBadge = isTemplate ? ' <span style="color:#00d4aa;font-size:9px;font-weight:700;letter-spacing:.3px">📐 TEMPLATE</span>' : '';
-    let preview = steps.slice(0,4).map((s,i) =>
-      '<div class="rprow"><div class="rpn">'+(i+1)+'</div>'
-      + '<span style="font-size:12px">'+(ACT_ICO[s.action]||'⚡')+'</span>'
-      + '<span style="font-weight:600;font-size:11.5px" title="'+(ACT_DESC[s.action]||'')+'">'+s.action+'</span>'
-      + '<span style="color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-family:DM Mono,monospace">'+(s.target||s.url||'').slice(0,46)+'</span>'
-      + '</div>'
-    ).join('');
-    if (steps.length > 4) preview += '<div style="font-size:10.5px;color:var(--t3);padding-left:22px">+' + (steps.length-4) + ' more</div>';
-    return '<div class="rcard"' + (isTemplate ? ' style="border:1px solid rgba(0,212,170,.3)"' : '') + '>'
-      + '<div class="rcard-hd">'
-        + '<div class="rthumb" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">🖥️</div>'
-        + '<div class="ri" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit"><div class="rname">'+r.name+ tplBadge +'</div>'
-          + '<div class="rmeta">'+steps.length+' steps · '+new Date(r.at).toLocaleTimeString()+'</div></div>'
-        + '<div class="racts">'
-          + '<button class="ia edit" data-action="loadRec"        data-id="'+r.id+'" title="Edit recording">📝</button>'
-          + '<button class="ia add"  data-action="runRec"         data-id="'+r.id+'" title="Run test">▶</button>'
-          + '<button class="ia add"  data-action="smartRunRec"    data-id="'+r.id+'" title="Smart Run (portal/project auto-detect)" style="font-size:12px">🧠</button>'
-          + '<button class="ia'+(isTemplate?' add':'')+'"      data-action="setTemplate"    data-id="'+r.id+'" title="'+(isTemplate?'Currently the project template':'Set as project creation template')+'" style="font-size:11px">'+(isTemplate?'📐':'📐')+'</button>'
-          + '<button class="ia"      data-action="renameRec"      data-id="'+r.id+'" title="Rename" style="font-size:11px">✏</button>'
-          + '<button class="ia del"  data-action="deleteRec"      data-id="'+r.id+'" title="Delete">✕</button>'
-        + '</div>'
-      + '</div>'
-      + '<div class="rpreview" data-action="loadRec" data-id="'+r.id+'" style="cursor:pointer" title="Click to edit">'+preview+'</div>'
-      + '</div>';
-  }).join('');
+  // Sort: pinned template first
+  _libSorted = [...G.recordings].sort((a, b) => {
+    const aT = G.settings.zpProjectTemplate === a.id ? 1 : 0;
+    const bT = G.settings.zpProjectTemplate === b.id ? 1 : 0;
+    return bT - aT;
+  });
+  wrap.innerHTML = '';
+  _libRendered = 0;
+  _renderLibBatch();
 }
 
 async function deleteRec(id) {
+  // Prevent deleting a template recording
+  if (G.settings.zpProjectTemplate === id) {
+    toast('Unset template first before deleting', 'fail');
+    return;
+  }
   await bg('DEL_REC', {id});  // deletes locally + syncs DELETE to WEBAPI
   G.recordings = G.recordings.filter(r => r.id !== id);
-  // Clear template reference if deleted recording was the template
-  if (G.settings.zpProjectTemplate === id) {
-    G.settings.zpProjectTemplate = '';
-    await bg('SAVE_SETTINGS', { s: G.settings });
-  }
   renderLibrary(); updateCounts();
   toast('Deleted', 'info');
 }
@@ -1075,12 +1124,12 @@ async function setProjectTemplate(id) {
     G.settings.zpProjectTemplate = '';
     await bg('SAVE_SETTINGS', { s: G.settings });
     renderLibrary();
-    toast('📐 Template cleared', 'info');
+    toast('Template cleared', 'info');
   } else {
     G.settings.zpProjectTemplate = id;
     await bg('SAVE_SETTINGS', { s: G.settings });
     renderLibrary();
-    toast('📐 "' + rec.name + '" set as project creation template', 'pass');
+    toast('Marked as template', 'pass');
   }
 }
 
@@ -1101,6 +1150,10 @@ async function recToPlatform(id) {
 
 // Rename a recording from the Library
 function renameRec(id) {
+  if (G.settings.zpProjectTemplate === id) {
+    toast('Unset template first before renaming', 'fail');
+    return;
+  }
   const rec = G.recordings.find(r => r.id === id);
   if (!rec) return;
   G._renameRecId = id;
@@ -1175,25 +1228,26 @@ async function smartRunRecording(id) {
   toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + rec.name + (actions ? ' [' + actions + ']' : ''), r.pass ? 'pass' : 'fail');
 }
 
-// Smart Run the LIVE recording
-async function smartRunLive() {
+// Run the current live recording
+async function runLive() {
   if (!G.live.steps || G.live.steps.length === 0) { toast('No steps to run','fail'); return; }
-  toast('🧠 Smart Run live recording...', 'info');
+  toast('Running live recording...', 'info');
   setTimeout(() => window.close(), 300);
   const fakeCase = {
-    id:              'smart_live_' + Date.now(),
+    id:              'run_live_' + Date.now(),
     name:            G.live.name || 'Live Flow',
     type:            'WEB',
+    framework:       'playwright',
+    browser:         'chromium',
     webUrl:          G.live.startUrl || G.live.steps[0]?.url || '',
+    steps:           G.live.steps.map(s => s.action + ' ' + (s.target||s.url||'')).join('\n'),
     _recordingSteps: G.live.steps,
-    _projectName:    '',
     method:          'GET',
     expectedStatus:  200
   };
-  const r = await bg('SMART_RUN', { c: fakeCase });
+  const r = await bg('RUN_CASE', { c: fakeCase });
   showRunResult({ name: fakeCase.name }, r);
-  const actions = r.smartActions ? r.smartActions.map(a => a.action).join(' → ') : '';
-  toast((r.pass ? '✓ Pass' : '✗ Fail') + (actions ? ' [' + actions + ']' : ''), r.pass ? 'pass' : 'fail');
+  toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + fakeCase.name, r.pass ? 'pass' : 'fail');
 }
 
 // ═══════════════════════════════════════════════════
@@ -1446,7 +1500,7 @@ function showRunResult(c, r) {
     + (r.error ? '<div style="background:var(--red-bg);border:1px solid rgba(240,91,91,.2);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--red);margin-bottom:10px">'+r.error+'</div>' : '')
     + (r.note  ? '<div style="background:var(--amber-bg);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--amber);margin-bottom:10px">'+r.note+'</div>' : '')
     + (r.healed && r.healed.length ? '<div style="background:#1a2f1a;border:1px solid rgba(72,199,142,.25);border-radius:8px;padding:9px 11px;font-size:11px;color:#48c78e;margin-bottom:10px"><b>🩹 Self-Healed (' + r.healed.length + '):</b><br>' + r.healed.map(h => '• <code>' + (h.selector||'').slice(0,40) + '</code> → <b>' + h.strategy + '</b>').join('<br>') + '</div>' : '')
-    + (r.steps && r.steps.length ? '<div style="margin-top:6px;font-size:11px;color:var(--fg2)"><b>Steps:</b><br>' + r.steps.map((st,idx) => '<span style="color:'+(st.ok?'#48c78e':'#f05b5b')+'">' + (st.ok?'✓':'✗') + ' ' + (idx+1) + '. ' + st.action + (st.retries ? ' <span style="color:#fabd2f">(retry×'+st.retries+')</span>' : '') + (st.healed ? ' <span style="color:#48c78e">🩹 '+st.healed.strategy+'</span>' : '') + '</span>').join('<br>') + '</div>' : '')
+    + (r.steps && r.steps.length ? '<div style="margin-top:6px;font-size:11px;color:var(--fg2)"><b>Steps:</b><br>' + r.steps.map((st,idx) => '<span style="color:'+(st.ok?'#48c78e':'#f05b5b')+'">' + (st.ok?'✓':'✗') + ' ' + (idx+1) + '. ' + st.action + (st.retries ? ' <span style="color:#fabd2f">(retry×'+st.retries+')</span>' : '') + (st.healed ? ' <span style="color:#48c78e">🩹 '+st.healed.strategy+'</span>' : '') + (st.skipped ? ' <span style="color:#fabd2f">⏭ skipped</span>' : '') + '</span>').join('<br>') + '</div>' : '')
     + (r.body  ? '<div class="fld"><label>Response</label><textarea class="ta" readonly style="min-height:80px">'+r.body.slice(0,600)+'</textarea></div>' : '');
   openModal('runModal');
 }

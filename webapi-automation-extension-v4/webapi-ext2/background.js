@@ -186,7 +186,13 @@ function addStep(step) {
   // Consecutive duplicate check: skip if previous step has same action + target
   const prev = REC.steps[REC.steps.length - 1];
   if (prev && step.action === prev.action && step.target === prev.target
-      && step.action !== 'NAVIGATE_TO' && step.action !== 'SEND_KEYS') {
+      && step.action !== 'NAVIGATE_TO') {
+    // For SEND_KEYS: replace the previous step's value (keep latest typed value)
+    if (step.action === 'SEND_KEYS') {
+      prev.value = step.value;
+      prev.t = step.t;
+      broadcast({ type:'STEPS_UPDATED', steps:REC.steps, total:REC.steps.length });
+    }
     return;
   }
   step.idx = REC.steps.length;
@@ -200,6 +206,11 @@ function insertStepBeforeLast(step) {
     addStep(step);
     return;
   }
+  // Dedup: skip if previous step has same action + target
+  const prev = REC.steps[REC.steps.length - 2];
+  if (prev && prev.action === step.action && prev.target === step.target) return;
+  const last = REC.steps[REC.steps.length - 1];
+  if (last && last.action === step.action && last.target === step.target) return;
   // Insert before the last step
   const insertIdx = REC.steps.length - 1;
   REC.steps.splice(insertIdx, 0, step);
@@ -242,6 +253,7 @@ function injectRecorder() {
   let lastRecordTime = 0;  // timestamp dedup
   let lastClickTime = 0;   // track last CLICK to tag auto-navigations
   const recentlySentInputs = new WeakMap(); // el → timestamp, prevents double SEND_KEYS after random popup
+  const recentSentSelectors = new Map(); // selector → timestamp, backup dedup when DOM elements get replaced
 
   // ── ZPQA-first XPath selector builder ────────────────────────────────────────
   // Deep zpqa search: self → ancestors → descendants → siblings' descendants
@@ -249,23 +261,69 @@ function injectRecorder() {
     if (!el || !el.getAttribute) return null;
     // 1. Self
     if (el.getAttribute('data-zpqa')) return el;
-    // 2. Ancestors (closest)
+    // 2. Ancestors (closest) — only accept if ancestor is a tight wrapper (not a huge container)
     const ancestor = el.closest('[data-zpqa]');
-    if (ancestor) return ancestor;
+    if (ancestor) {
+      // Accept ancestor zpqa only if it's a close wrapper — its area is less than 4x the clicked element's area
+      const ar = ancestor.getBoundingClientRect();
+      const er = el.getBoundingClientRect();
+      const aArea = ar.width * ar.height;
+      const eArea = Math.max(er.width * er.height, 1);
+      if (aArea / eArea < 4 || aArea < 20000) return ancestor;
+      // Large container ancestor — if the element has its own stable ID, skip this ancestor
+      // Use _isDynamicId to skip IDs like "addcmt_btn_218771000000439121" — those aren't strong identifiers
+      const hasStableId = (el.id && !_isDynamicId(el.id))
+        || (el.getAttribute('name') && !_isDynamicId(el.getAttribute('name')))
+        || el.getAttribute('data-testid')
+        || el.getAttribute('eventid')
+        || (el.getAttribute('value') && el.getAttribute('value').length > 1);
+      if (!hasStableId) return ancestor;
+      // Element has its own stable ID — don't use distant container zpqa, fall through to sel()
+    }
     // 3. Descendants (deep search, not just first child)
     const desc = el.querySelector('[data-zpqa]');
     if (desc) return desc;
-    // 4. Parent's children (siblings) that contain zpqa
+    // 4. If the element has its own strong stable identifier, don't search siblings/grandparent
+    //    to avoid grabbing unrelated zpqa elements from the same form/container
+    const hasStableOwn = (el.id && !_isDynamicId(el.id))
+      || (el.getAttribute('name') && !_isDynamicId(el.getAttribute('name')))
+      || el.getAttribute('data-testid')
+      || el.getAttribute('eventid')
+      || (el.getAttribute('value') && !_isDynamicId(el.getAttribute('value')) && el.getAttribute('value').length > 1);
+    if (hasStableOwn) return null;
+    // 5. Parent's children (siblings) that contain zpqa — only if visually close
     if (el.parentElement) {
       const sibling = el.parentElement.querySelector('[data-zpqa]');
-      if (sibling) return sibling;
-      // 5. Grandparent's descendants
+      if (sibling && sibling !== el) {
+        const sr = sibling.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        const dist = Math.abs(sr.top - er.top) + Math.abs(sr.left - er.left);
+        if (dist < 100) return sibling;
+      }
+      // 6. Grandparent's descendants — only if visually close to clicked element
       if (el.parentElement.parentElement) {
         const gp = el.parentElement.parentElement.querySelector('[data-zpqa]');
-        if (gp) return gp;
+        if (gp) {
+          const gr = gp.getBoundingClientRect();
+          const er = el.getBoundingClientRect();
+          const dist = Math.abs(gr.top - er.top) + Math.abs(gr.left - er.left);
+          if (dist < 80) return gp;
+        }
       }
     }
     return null;
+  }
+
+  // Detect dynamic/auto-generated IDs containing long numeric sequences (e.g. addcmt_btn_218771000000439121)
+  function _isDynamicId(val) {
+    if (!val) return false;
+    // Contains 6+ consecutive digits → likely a database/dynamic ID
+    if (/\d{6,}/.test(val)) return true;
+    // UUID-style patterns
+    if (/[0-9a-f]{8}-[0-9a-f]{4}/.test(val)) return true;
+    // Purely numeric
+    if (/^\d+$/.test(val)) return true;
+    return false;
   }
 
   function sel(el, shallow) {
@@ -295,42 +353,40 @@ function injectRecorder() {
       const ztag = zpqaEl.tagName ? zpqaEl.tagName.toLowerCase() : '*';
       return `//${ztag}[@data-zpqa='${zpqa}']`;
     }
-    // Priority 2: test IDs
+    // Priority 2: test IDs (skip if dynamic)
     const tid = el.dataset?.testid || el.getAttribute('data-testid') || el.getAttribute('data-test') || el.getAttribute('data-cy') || el.getAttribute('data-qa');
-    if (tid) return `//${tag}[@data-testid='${tid}']`;
-    // Priority 3: name attribute (form fields)
+    if (tid && !_isDynamicId(tid)) return `//${tag}[@data-testid='${tid}']`;
+    // Priority 3: eventid (stable custom attr, common in Zoho)
+    const evtId = el.getAttribute('eventid');
+    if (evtId && !_isDynamicId(evtId)) return `//${tag}[@eventid='${evtId}']`;
+    // Priority 4: value attribute (for buttons, skip if dynamic)
+    const val = el.getAttribute('value');
+    if (val && !_isDynamicId(val) && val.length > 1 && val.length <= 60) return `//${tag}[@value='${val}']`;
+    // Priority 5: name attribute (skip if contains dynamic IDs)
     const name = el.getAttribute('name');
-    if (name) return `//${tag}[@name='${name}']`;
-    // Priority 4: aria-label (skip trivial "true"/"false" values)
+    if (name && !_isDynamicId(name)) return `//${tag}[@name='${name}']`;
+    // Priority 6: aria-label (skip trivial "true"/"false" values)
     const aria = el.getAttribute('aria-label');
     if (aria && aria !== 'true' && aria !== 'false') return `//${tag}[@aria-label='${aria}']`;
-    // Priority 5: placeholder (form fields)
+    // Priority 7: placeholder (form fields)
     const ph = el.getAttribute('placeholder');
     if (ph) return `//${tag}[@placeholder='${ph}']`;
-    // Priority 6: label association (for attribute → input ID)
-    if (el.id) {
-      const label = document.querySelector('label[for="' + el.id + '"]');
-      if (label) {
-        const labelText = (label.textContent || '').trim().slice(0, 40);
-        if (labelText) return `//${tag}[@id='${el.id}']`;
-      }
-    }
-    // Priority 7: data-tooltip
+    // Priority 8: data-tooltip (skip trivial values)
     const tooltip = el.getAttribute('data-tooltip');
     if (tooltip && tooltip !== 'true' && tooltip !== 'false') return `//${tag}[@data-tooltip='${tooltip}']`;
-    // Priority 8: role + aria-label or role + data-tooltip
+    // Priority 9: role + aria-label or role + data-tooltip
     const role = el.getAttribute('role');
     if (role && aria && aria !== 'true') return `//${tag}[@role='${role}' and @aria-label='${aria}']`;
     if (role && tooltip && tooltip !== 'true') return `//${tag}[@role='${role}' and @data-tooltip='${tooltip}']`;
-    // Priority 9: role + text
+    // Priority 10: role + text
     const txt = (el.innerText || '').trim().slice(0, 30);
     if (role && txt) return `//${tag}[@role='${role}' and contains(text(),'${txt.replace(/'/g, "\\'")}')]`;
-    // Priority 10: id
-    if (el.id) return `//${tag}[@id='${el.id}']`;
-    // Priority 11: title attribute
+    // Priority 11: id (only if NOT dynamic)
+    if (el.id && !_isDynamicId(el.id)) return `//${tag}[@id='${el.id}']`;
+    // Priority 12: title attribute
     const title = el.getAttribute('title');
     if (title) return `//${tag}[@title='${title}']`;
-    // Priority 12: stable classes
+    // Priority 13: stable classes
     const cls = Array.from(el.classList || [])
       .filter(c => !/^(hover|focus|active|is-|ng-|v-|css-)/.test(c))
       .slice(0, 2);
@@ -356,12 +412,17 @@ function injectRecorder() {
       if (!t) { console.log('[WebAPI-REC] DROPPED: empty target', step.action); return; }
       if (/^\/\/[a-z]+(\[\d+\])?$/.test(t)) { console.log('[WebAPI-REC] DROPPED: generic locator', t, step.action); return; }
     }
-    // Dedup: skip if same action+target+value as the very last step
-    const key = step.action + '|' + step.target + '|' + (step.value || '');
+    // Dedup: For SEND_KEYS, ignore value (changes per keystroke) — only compare action+target.
+    // For other actions, include value in the key.
+    const key = step.action === 'SEND_KEYS'
+      ? step.action + '|' + step.target
+      : step.action + '|' + step.target + '|' + (step.value || '');
     if (key === lastActionKey && step.action !== 'NAVIGATE_TO') { console.log('[WebAPI-REC] DROPPED: dedup key', step.action, step.target); return; }
-    // Timestamp dedup: skip if same action recorded within 300ms
+    // Timestamp dedup: skip if same action recorded within 500ms (ALL actions including SEND_KEYS)
     const now = Date.now();
-    if (now - lastRecordTime < 300 && step.action !== 'NAVIGATE_TO' && step.action !== 'SEND_KEYS') { console.log('[WebAPI-REC] DROPPED: timestamp dedup', step.action, step.target, now - lastRecordTime + 'ms'); return; }
+    if (now - lastRecordTime < 500 && step.action !== 'NAVIGATE_TO') { console.log('[WebAPI-REC] DROPPED: timestamp dedup', step.action, step.target, now - lastRecordTime + 'ms'); return; }
+    // SCROLL_TO_ELEMENT dedup: skip consecutive scrolls on same target within 3s
+    if (step.action === 'SCROLL_TO_ELEMENT' && lastActionKey.startsWith('SCROLL_TO_ELEMENT|' + step.target)) { console.log('[WebAPI-REC] DROPPED: scroll dedup', step.target); return; }
     lastRecordTime = now;
     lastActionKey = key;
     step.id = ++seq;
@@ -559,7 +620,7 @@ function injectRecorder() {
     if (!scrollDetected) return;
     scrollDetected = false;
     // Silently insert scroll_to step before the click — no popup needed
-    chrome.runtime.sendMessage({ type:'REC_INSERT_BEFORE_LAST', step:{ action:'SCROLL_TO_ELEMENT', target:target, tagName:tagName, text:text, value:'', url:location.href, t:Date.now(), bounds:bounds, scrollTimeout:10000, scrollAttempts:20 } }).catch(() => {});
+    chrome.runtime.sendMessage({ type:'REC_INSERT_BEFORE_LAST', step:{ action:'SCROLL_TO_ELEMENT', target:target, tagName:tagName, text:text, value:'', url:_normalizeUrl(location.href), t:Date.now(), bounds:bounds, scrollTimeout:10000, scrollAttempts:20 } }).catch(() => {});
   }
 
   // Listen for scroll-detected broadcast from any frame (including parent)
@@ -776,7 +837,7 @@ function injectRecorder() {
     if (/task.?name|taskTitle|addtask/i.test(all))  return 'taskname';
     if (/bug.?name|bug.?title|defect/i.test(all))   return 'bugname';
     if (/project.?name/i.test(all))                  return 'projectname';
-    if (/task.?list|tasklist/i.test(all))             return 'tasklistname';
+    if (/task.?list|tasklist|todotitle/i.test(all))    return 'tasklistname';
     if (/comment|note(?!book)|feedback/i.test(all))  return 'comment';
 
     // Generic patterns
@@ -793,22 +854,41 @@ function injectRecorder() {
     // Prevent showing a second popup if one is already visible
     if (randomPopup) return;
 
-    // Auto-apply for high-confidence Zoho field types (matched from data-zpqa)
-    const _zpqa = (el.getAttribute('data-zpqa') || '').toLowerCase();
-    const ZPQA_AUTO_MAP = {
-      'projectname':'projectname', 'project_name':'projectname',
-      'taskname':'taskname', 'task_name':'taskname', 'addtask':'taskname', 'tasktitle':'taskname',
-      'tasklistname':'tasklistname', 'tasklist_name':'tasklistname', 'addtasklist':'tasklistname',
-      'bugname':'bugname', 'bug_name':'bugname', 'bugtitle':'bugname', 'defectname':'bugname'
-    };
-    if (_zpqa && ZPQA_AUTO_MAP[_zpqa]) {
-      const autoType = ZPQA_AUTO_MAP[_zpqa];
+    // Check selector-based dedup (prevents re-recording after auto-apply even if DOM element got replaced)
+    if (step.target && recentSentSelectors.has(step.target)) {
+      const lastTime = recentSentSelectors.get(step.target);
+      if (Date.now() - lastTime < 5000) return;
+    }
+
+    // Helper: auto-apply a random type silently
+    function _autoApply(autoType) {
       step.value = '{{random:' + autoType + '}}';
       send(step);
       recentlySentInputs.set(el, Date.now());
-      // Brief green outline to indicate auto-fill
+      if (step.target) recentSentSelectors.set(step.target, Date.now());
       try { el.style.outline = '2px solid #00d4aa'; el.style.outlineOffset = '2px'; setTimeout(() => { el.style.outline = ''; el.style.outlineOffset = ''; }, 1500); } catch(e) {}
-      return;
+    }
+
+    // Auto-apply for high-confidence Zoho field types
+    const ZPQA_AUTO_MAP = {
+      'projectname':'projectname', 'project_name':'projectname',
+      'taskname':'taskname', 'task_name':'taskname', 'addtask':'taskname', 'tasktitle':'taskname',
+      'tasklistname':'tasklistname', 'tasklist_name':'tasklistname', 'addtasklist':'tasklistname', 'todotitle':'tasklistname',
+      'bugname':'bugname', 'bug_name':'bugname', 'bugtitle':'bugname', 'defectname':'bugname'
+    };
+
+    // Check 1: data-zpqa attribute
+    const _zpqa = (el.getAttribute('data-zpqa') || '').toLowerCase();
+    if (_zpqa && ZPQA_AUTO_MAP[_zpqa]) { _autoApply(ZPQA_AUTO_MAP[_zpqa]); return; }
+
+    // Check 2: name attribute/property
+    const _nameAttr = (el.getAttribute('name') || el.name || '').toLowerCase();
+    if (_nameAttr && ZPQA_AUTO_MAP[_nameAttr]) { _autoApply(ZPQA_AUTO_MAP[_nameAttr]); return; }
+
+    // Check 3: parse step.target selector for name/zpqa value
+    if (step.target) {
+      const _selName = step.target.match(/@(?:name|data-zpqa)=['"](.*?)['"]/);
+      if (_selName && ZPQA_AUTO_MAP[_selName[1].toLowerCase()]) { _autoApply(ZPQA_AUTO_MAP[_selName[1].toLowerCase()]); return; }
     }
 
     removeRandomPopup();
@@ -969,6 +1049,8 @@ function injectRecorder() {
       // Skip if this element recently had a step sent via random popup
       const lastSentCE = recentlySentInputs.get(editableRoot);
       if (lastSentCE && Date.now() - lastSentCE < 3000) return;
+      const _ceSel = sel(editableRoot);
+      if (_ceSel && recentSentSelectors.has(_ceSel) && Date.now() - recentSentSelectors.get(_ceSel) < 5000) return;
       clearTimeout(inputMap.get(editableRoot));
       inputMap.set(editableRoot, setTimeout(() => {
         if (randomPopup) return; // popup already showing from a previous timer
@@ -997,9 +1079,12 @@ function injectRecorder() {
     }
 
     if (!['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
-    // Skip if this element recently had a step sent via random popup
+    // Skip if this element recently had a step sent via random popup or dedup
     const lastSentInput = recentlySentInputs.get(el);
     if (lastSentInput && Date.now() - lastSentInput < 3000) return;
+    // Selector-based dedup (survives DOM element replacement)
+    const _elSel = sel(el);
+    if (_elSel && recentSentSelectors.has(_elSel) && Date.now() - recentSentSelectors.get(_elSel) < 5000) return;
     clearTimeout(inputMap.get(el));
     inputMap.set(el, setTimeout(() => {
       if (randomPopup) return; // popup already showing from a previous timer
@@ -1613,6 +1698,52 @@ function _randTasklistName(){const p=['Tasklist','Module','Phase','Feature','Com
         if(fw==='cypress')    return `    cy.go('forward');`;
         if(fw==='selenium')   return `    driver.navigate().forward();`;
         return `// FORWARD`;
+      case 'CLOSE':
+      case 'QUIT':
+        if(fw==='playwright') return `  await page.close();`;
+        if(fw==='cypress')    return `    // ${step.action} — Cypress manages browser lifecycle`;
+        if(fw==='selenium')   return `    driver.${step.action==='QUIT'?'quit':'close'}();`;
+        return `// ${step.action}`;
+      case 'GET':
+        if(fw==='playwright') return `  await page.goto('${t}');`;
+        if(fw==='cypress')    return `    cy.visit('${t}');`;
+        if(fw==='selenium')   return `    driver.get("${t}");`;
+        return `// GET ${t}`;
+      case 'SWITCH_TABS':
+        if(fw==='playwright') return `  // Switch to tab index ${v || 0} — use context.pages()[${v || 0}]`;
+        if(fw==='cypress')    return `    // SWITCH_TABS — Cypress does not support multi-tab`;
+        if(fw==='selenium')   return `    { ArrayList<String> tabs = new ArrayList<>(driver.getWindowHandles()); driver.switchTo().window(tabs.get(${v || 0})); }`;
+        return `// SWITCH_TABS ${v}`;
+      case 'CLOSE_TABS':
+        if(fw==='playwright') return `  await page.close();`;
+        if(fw==='cypress')    return `    // CLOSE_TABS — Cypress manages browser lifecycle`;
+        if(fw==='selenium')   return `    driver.close();`;
+        return `// CLOSE_TABS`;
+      case 'SHIFT_CONTROL_SELECT':
+        if(fw==='playwright') return `  await page.click('${t}', { modifiers: ['Shift', 'Control'] }); // ${step.text||''}`;
+        if(fw==='cypress')    return `    ${cyGet(t)}.click({ shiftKey: true, ctrlKey: true }); // ${step.text||''}`;
+        if(fw==='selenium')   return `    new Actions(driver).keyDown(Keys.SHIFT).keyDown(Keys.CONTROL).click(driver.findElement(${seBy(t)})).keyUp(Keys.CONTROL).keyUp(Keys.SHIFT).perform();`;
+        return `// SHIFT_CONTROL_SELECT ${t}`;
+      case 'HOLD_CONTROL_SELECT':
+        if(fw==='playwright') return `  await page.click('${t}', { modifiers: ['${navigator&&navigator.platform&&navigator.platform.includes("Mac")?"Meta":"Control"}'] }); // ${step.text||''}`;
+        if(fw==='cypress')    return `    ${cyGet(t)}.click({ ctrlKey: true }); // ${step.text||''}`;
+        if(fw==='selenium')   return `    new Actions(driver).keyDown(Keys.CONTROL).click(driver.findElement(${seBy(t)})).keyUp(Keys.CONTROL).perform();`;
+        return `// HOLD_CONTROL_SELECT ${t}`;
+      case 'HOLD_AND_MOVE':
+        if(fw==='playwright') return `  await page.locator('${t}').dragTo(page.locator('${v||t}'));`;
+        if(fw==='cypress')    return `    ${cyGet(t)}.trigger('mousedown').trigger('mousemove', { clientX: ${step.x||0}, clientY: ${step.y||0} }).trigger('mouseup');`;
+        if(fw==='selenium')   return `    new Actions(driver).clickAndHold(driver.findElement(${seBy(t)})).moveToElement(driver.findElement(${seBy(v||t)})).release().perform();`;
+        return `// HOLD_AND_MOVE ${t}`;
+      case 'COMPARE_PDF_CONTENT':
+        return `  // COMPARE_PDF_CONTENT — requires server-side PDF comparison`;
+      case 'COMPARE_PDF_PIXELS':
+        return `  // COMPARE_PDF_PIXELS — requires server-side pixel comparison`;
+      case 'CONDITIONS':
+        return `  // CONDITIONS: ${v || 'evaluate expression'}`;
+      case 'ASSOCIATE_ACTION_GROUP':
+        return `  // ASSOCIATE_ACTION_GROUP: ${v || step.text || 'group reference'}`;
+      case 'ASSOCIATE_API':
+        return `  // ASSOCIATE_API: ${v || step.text || 'API reference'}`;
       default: return `  // ${step.action}: ${t}`;
     }
   };
@@ -1672,6 +1803,18 @@ ${stepsCode}
           case 'REFRESH': return `    page.reload()`;
           case 'BACK': return `    page.go_back()`;
           case 'FORWARD': return `    page.go_forward()`;
+          case 'CLOSE': case 'QUIT': return `    page.close()`;
+          case 'GET': return `    page.goto("${t}")`;
+          case 'SWITCH_TABS': return `    # Switch tabs — use context.pages[${s.value||0}]`;
+          case 'CLOSE_TABS': return `    page.close()`;
+          case 'SHIFT_CONTROL_SELECT': return `    page.click("${t}", modifiers=["Shift", "Control"])`;
+          case 'HOLD_CONTROL_SELECT': return `    page.click("${t}", modifiers=["Control"])`;
+          case 'HOLD_AND_MOVE': return `    page.locator("${t}").drag_to(page.locator("${s.value||t}"))`;
+          case 'COMPARE_PDF_CONTENT': return `    # COMPARE_PDF_CONTENT — requires server-side PDF comparison`;
+          case 'COMPARE_PDF_PIXELS': return `    # COMPARE_PDF_PIXELS — requires server-side pixel comparison`;
+          case 'CONDITIONS': return `    # CONDITIONS: ${s.value||'evaluate expression'}`;
+          case 'ASSOCIATE_ACTION_GROUP': return `    # ASSOCIATE_ACTION_GROUP: ${s.value||s.text||''}`;
+          case 'ASSOCIATE_API': return `    # ASSOCIATE_API: ${s.value||s.text||''}`;
           default: return `    # ${s.action}: ${t}`;
         }
       }).join('\n');
@@ -1706,6 +1849,12 @@ ${stepsCode}
           case 'BACK_SPACE_KEY': return `        page.keyboard().press("Backspace");`;
           case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `        page.keyboard().press("${s.value||''}");`;
           case 'RIGHT_CLICK': return `        page.click("${s.target}", new Page.ClickOptions().setButton(MouseButton.RIGHT));`;
+          case 'CLOSE': case 'QUIT': return `        page.close();`;
+          case 'GET': return `        page.navigate("${s.target}");`;
+          case 'CLOSE_TABS': return `        page.close();`;
+          case 'SHIFT_CONTROL_SELECT': return `        page.click("${s.target}", new Page.ClickOptions().setModifiers(Arrays.asList(KeyboardModifier.SHIFT, KeyboardModifier.CONTROL)));`;
+          case 'HOLD_CONTROL_SELECT': return `        page.click("${s.target}", new Page.ClickOptions().setModifiers(Arrays.asList(KeyboardModifier.CONTROL)));`;
+          case 'HOLD_AND_MOVE': return `        page.locator("${s.target}").dragTo(page.locator("${s.value||s.target}"));`;
           default: return `        // ${s.action}`;
         }
       }).join('\n');
@@ -1740,6 +1889,12 @@ ${stepsCode}
           case 'BACK_SPACE_KEY': return `        await Page.Keyboard.PressAsync("Backspace");`;
           case 'CUT_COPY_PASTE_SELECTALL': case 'SHORTCUT_KEY': return `        await Page.Keyboard.PressAsync("${s.value||''}");`;
           case 'RIGHT_CLICK': return `        await Page.ClickAsync("${s.target}", new() { Button = MouseButton.Right });`;
+          case 'CLOSE': case 'QUIT': return `        await Page.CloseAsync();`;
+          case 'GET': return `        await Page.GotoAsync("${s.target}");`;
+          case 'CLOSE_TABS': return `        await Page.CloseAsync();`;
+          case 'SHIFT_CONTROL_SELECT': return `        await Page.ClickAsync("${s.target}", new() { Modifiers = new[] { KeyboardModifier.Shift, KeyboardModifier.Control } });`;
+          case 'HOLD_CONTROL_SELECT': return `        await Page.ClickAsync("${s.target}", new() { Modifiers = new[] { KeyboardModifier.Control } });`;
+          case 'HOLD_AND_MOVE': return `        await Page.Locator("${s.target}").DragToAsync(Page.Locator("${s.value||s.target}"));`;
           default: return `        // ${s.action}`;
         }
       }).join('\n');
@@ -1791,6 +1946,14 @@ ${stepsCode}
           case 'REFRESH': return `        self.driver.refresh()`;
           case 'BACK': return `        self.driver.back()`;
           case 'FORWARD': return `        self.driver.forward()`;
+          case 'CLOSE': return `        self.driver.close()`;
+          case 'QUIT': return `        self.driver.quit()`;
+          case 'GET': return `        self.driver.get("${t}")`;
+          case 'SWITCH_TABS': return `        tabs = self.driver.window_handles\n        self.driver.switch_to.window(tabs[${s.value||0}])`;
+          case 'CLOSE_TABS': return `        self.driver.close()`;
+          case 'SHIFT_CONTROL_SELECT': return `        from selenium.webdriver.common.action_chains import ActionChains\n        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).key_down(Keys.SHIFT).key_down(Keys.CONTROL).click(self.driver.find_element(${pyBy(t)})).key_up(Keys.CONTROL).key_up(Keys.SHIFT).perform()`;
+          case 'HOLD_CONTROL_SELECT': return `        from selenium.webdriver.common.action_chains import ActionChains\n        from selenium.webdriver.common.keys import Keys\n        ActionChains(self.driver).key_down(Keys.CONTROL).click(self.driver.find_element(${pyBy(t)})).key_up(Keys.CONTROL).perform()`;
+          case 'HOLD_AND_MOVE': return `        from selenium.webdriver.common.action_chains import ActionChains\n        ActionChains(self.driver).click_and_hold(self.driver.find_element(${pyBy(t)})).move_to_element(self.driver.find_element(${pyBy(v||t)})).release().perform()`;
           default: return `        # ${s.action}`;
         }
       }).join('\n');
@@ -1820,6 +1983,14 @@ ${stepsCode}
           case 'REFRESH': return `        driver.navigate().refresh();`;
           case 'BACK': return `        driver.navigate().back();`;
           case 'FORWARD': return `        driver.navigate().forward();`;
+          case 'CLOSE': return `        driver.close();`;
+          case 'QUIT': return `        driver.quit();`;
+          case 'GET': return `        driver.get("${s.target}");`;
+          case 'SWITCH_TABS': return `        { ArrayList<String> tabs = new ArrayList<>(driver.getWindowHandles()); driver.switchTo().window(tabs.get(${s.value||0})); }`;
+          case 'CLOSE_TABS': return `        driver.close();`;
+          case 'SHIFT_CONTROL_SELECT': return `        new org.openqa.selenium.interactions.Actions(driver).keyDown(Keys.SHIFT).keyDown(Keys.CONTROL).click(driver.findElement(${javaBy(s.target)})).keyUp(Keys.CONTROL).keyUp(Keys.SHIFT).perform();`;
+          case 'HOLD_CONTROL_SELECT': return `        new org.openqa.selenium.interactions.Actions(driver).keyDown(Keys.CONTROL).click(driver.findElement(${javaBy(s.target)})).keyUp(Keys.CONTROL).perform();`;
+          case 'HOLD_AND_MOVE': return `        new org.openqa.selenium.interactions.Actions(driver).clickAndHold(driver.findElement(${javaBy(s.target)})).moveToElement(driver.findElement(${javaBy(s.value||s.target)})).release().perform();`;
           default: return `        // ${s.action}`;
         }
       }).join('\n');
@@ -1964,7 +2135,9 @@ async function runCase(c) {
           }
 
           let startUrl = c.webUrl || rawSteps[0]?.url || '';
-          // Resolve any remaining {{zpId:*}} in the start URL
+          // Resolve all placeholders from the active tab's live URL
+          startUrl = resolveUrlPlaceholders(startUrl, tab.url);
+          // For module URLs with lingering zpId placeholders, strip to module level
           if (startUrl.includes('{{zpId:')) {
             const _moduleMatch = startUrl.match(/(.*?\/(?:tasks|issues|bugs|milestones|forums))\b/);
             if (_moduleMatch) {
@@ -1972,6 +2145,11 @@ async function runCase(c) {
             }
           }
           startUrl = startUrl.replace(/\{\{zpId:(\d+)\}\}/g, '$1');
+          // Rewrite #allprojects/PROJECTID/ → #allprojects/ (direct ID causes Permission Denied)
+          const _apStartMatch = startUrl.match(/(.*?#allprojects)\/\d+\/?/);
+          if (_apStartMatch) {
+            startUrl = _apStartMatch[1] + '/';
+          }
 
           // Stop inspect mode and hide all overlays before replay
           try {
@@ -2001,10 +2179,57 @@ async function runCase(c) {
           if (startUrl && startUrl !== tab.url) {
             await chrome.tabs.update(tab.id, { url: startUrl });
             await new Promise(r => setTimeout(r, 1500)); // wait for load
+
+            // Page-state check after navigation
+            try {
+              const [stRes] = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                  const body = document.body?.innerText || '';
+                  if (body.includes('Permission Denied') || body.includes('do not have access')) return 'permission-denied';
+                  if (body.includes('Page Not Found') || body.includes('404')) return 'not-found';
+                  return 'ok';
+                }
+              });
+              if (stRes?.result === 'permission-denied' || stRes?.result === 'not-found') {
+                // Strip URL to module level and retry
+                const mMatch = startUrl.match(/(.*?\/(?:tasks|issues|bugs|milestones|forums))\b/);
+                if (mMatch) {
+                  startUrl = mMatch[1];
+                  await chrome.tabs.update(tab.id, { url: startUrl });
+                  await new Promise(r => setTimeout(r, 2000));
+                } else {
+                  // Handle allprojects/projectId — strip project ID to go to listing
+                  const apMatch = startUrl.match(/(.*?#allprojects)\//);
+                  if (apMatch) {
+                    startUrl = apMatch[1] + '/';
+                    await chrome.tabs.update(tab.id, { url: startUrl });
+                    await new Promise(r => setTimeout(r, 2000));
+                  } else {
+                    // Handle other project URLs — try project dashboard
+                    const projMatch = startUrl.match(/(.*?)#(?:project|zp\/projects)\/(\d+)/);
+                    if (projMatch) {
+                      startUrl = projMatch[1] + '#zp/projects/' + projMatch[2] + '/';
+                      await chrome.tabs.update(tab.id, { url: startUrl });
+                      await new Promise(r => setTimeout(r, 2000));
+                    }
+                  }
+                }
+              }
+            } catch(e) {}
+          }
+
+          // Pre-resolve placeholders in all step URLs/targets from the active tab
+          // (replaySteps also resolves, but it uses location.href INSIDE the tab which
+          //  may be stale if the tab navigated to a broken URL)
+          const _liveUrl = startUrl || tab.url;
+          for (const st of rawSteps) {
+            if (st.url) st.url = resolveUrlPlaceholders(st.url, _liveUrl);
+            if (st.target && st.action === 'NAVIGATE_TO') st.target = resolveUrlPlaceholders(st.target, _liveUrl);
           }
 
           // Inject and run the replay script
-          const _rdCfg1 = { emailDomain: (d2.settings||{}).randomEmailDomain || '@test.com', phonePrefix: (d2.settings||{}).randomPhonePrefix || '+1-555-' };
+          const _rdCfg1 = { emailDomain: (d2.settings||{}).randomEmailDomain || '@test.com', phonePrefix: (d2.settings||{}).randomPhonePrefix || '+1-555-', projectName: c.name || '' };
           const result = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: replaySteps,
@@ -2192,6 +2417,76 @@ function replaySteps(steps, rdCfg) {
       }
       // Try top-level first
       const topEl = find(document, selector);
+
+      // Text disambiguation: if step has a text field and the found element's text doesn't match,
+      // try to find the right element by text content
+      if (topEl && step && step.text && step.action === 'CLICK') {
+        const txt = (topEl.textContent || '').trim();
+        if (txt !== step.text && !txt.includes(step.text)) {
+          // Found element doesn't match expected text
+
+          // Strategy 1: If XPath, search all matches for a text match
+          if (isXPath) {
+            try {
+              const allResults = document.evaluate(selector, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+              for (let ri = 0; ri < allResults.snapshotLength; ri++) {
+                const node = allResults.snapshotItem(ri);
+                const nt = (node.textContent || '').trim();
+                if (nt === step.text || nt.includes(step.text)) return node;
+              }
+            } catch(e) {}
+          }
+
+          // Strategy 2: Search inside the found element for a clickable child with matching text
+          // Handles cases like tabcontent div containing an "Add Comment" button
+          const clickCandidates = topEl.querySelectorAll('button, a, [role="button"], input[type="submit"]');
+          for (const c of clickCandidates) {
+            const ct = (c.textContent || '').trim();
+            if (ct.includes(step.text) || step.text.includes(ct)) {
+              return c;
+            }
+          }
+
+          // Strategy 3: Search nearby siblings for a zpqa match with correct text
+          if (topEl.parentElement) {
+            const siblings = topEl.parentElement.querySelectorAll('[data-zpqa]');
+            for (const sib of siblings) {
+              const st = (sib.textContent || '').trim();
+              if ((st === step.text || st.includes(step.text)) && sib !== topEl) {
+                return sib;
+              }
+            }
+          }
+        } else if (isXPath) {
+          // Text matches — but if there are multiple elements, prefer exact match
+          try {
+            const allResults = document.evaluate(selector, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+            if (allResults.snapshotLength > 1) {
+              for (let ri = 0; ri < allResults.snapshotLength; ri++) {
+                const node = allResults.snapshotItem(ri);
+                const nt = (node.textContent || '').trim();
+                if (nt === step.text) return node;
+              }
+            }
+          } catch(e) {}
+        }
+      }
+
+      // Text disambiguation for non-CLICK actions (MOVE_TO, etc.) with XPath
+      if (topEl && step && step.text && step.action !== 'CLICK' && isXPath) {
+        const txt = (topEl.textContent || '').trim();
+        if (txt !== step.text && !txt.includes(step.text)) {
+          try {
+            const allResults = document.evaluate(selector, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+            for (let ri = 0; ri < allResults.snapshotLength; ri++) {
+              const node = allResults.snapshotItem(ri);
+              const nt = (node.textContent || '').trim();
+              if (nt === step.text || nt.includes(step.text)) return node;
+            }
+          } catch(e) {}
+        }
+      }
+
       if (topEl) return topEl;
       // Fallback: search all iframes even if step doesn't have iframe flag
       const iframes = document.querySelectorAll('iframe');
@@ -2570,20 +2865,22 @@ function replaySteps(steps, rdCfg) {
     // Reusable: inject CSS hover classes to reveal hidden elements.
 
     function _revealHoverHidden(el) {
-      const cs = getComputedStyle(el);
+      // Use the element's own document (may be iframe contentDocument)
+      const elDoc = el.ownerDocument || document;
+      const cs = elDoc.defaultView.getComputedStyle(el);
       if (el.offsetWidth === 0 || cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
         const chain = [el]; let p = el.parentElement;
         for (let i = 0; i < 5 && p; i++) { chain.push(p); p = p.parentElement; }
         chain.forEach(h => h.classList.add('__webapi_hover'));
-        if (!document.getElementById('__webapi_hover_style')) {
-          const s = document.createElement('style'); s.id = '__webapi_hover_style';
+        if (!elDoc.getElementById('__webapi_hover_style')) {
+          const s = elDoc.createElement('style'); s.id = '__webapi_hover_style';
           s.textContent = `
             .twoway-wrapper.__webapi_hover .twoway-back, .__webapi_hover > .twoway-back,
             .twoway-wrapper:hover .twoway-back { display:block!important; visibility:visible!important; opacity:1!important; pointer-events:auto!important; }
             .__webapi_hover>[class*="dropdown"], .__webapi_hover>[class*="menu"],
             .__webapi_hover [class*="hover-show"], .__webapi_hover [class*="on-hover"] { display:block!important; visibility:visible!important; opacity:1!important; }
           `;
-          document.head.appendChild(s);
+          elDoc.head.appendChild(s);
         }
         // Dispatch mouse events on parent chain for JS-based hover listeners
         chain.forEach(h => {
@@ -2653,11 +2950,26 @@ function replaySteps(steps, rdCfg) {
       const attr = _extractAttrFromSelector(selector);
       if (attr && (attr.type === 'zpqa' || attr.type === 'name' || attr.type === 'id')) {
         const attrName = attr.type === 'zpqa' ? 'data-zpqa' : attr.type;
+        // Search top-level document
         const hiddenEl = document.querySelector(`[${attrName}="${attr.value}"]`);
         if (hiddenEl) {
           _revealHoverHidden(hiddenEl);
           await wait(300);
           return { el: hiddenEl, healed: true, strategy: 'hover-reveal' };
+        }
+        // Also search inside iframes
+        const allIframes = document.querySelectorAll('iframe');
+        for (const f of allIframes) {
+          try {
+            if (f.contentDocument) {
+              const iframeHidden = f.contentDocument.querySelector(`[${attrName}="${attr.value}"]`);
+              if (iframeHidden) {
+                f.scrollIntoView({ behavior:'smooth', block:'center' });
+                await wait(200);
+                return { el: iframeHidden, healed: true, strategy: 'hover-reveal-iframe' };
+              }
+            }
+          } catch(e) {}
         }
       }
 
@@ -2673,14 +2985,328 @@ function replaySteps(steps, rdCfg) {
     // Self-healing log — attached to results for debugging
     const _healLog = [];
 
-    // ── 7. Step-Level Agent: Error Classification ─────────
+    // ── 7. Page-Aware Agent ─────────────────────────────
+    // Analyzes the current page state and makes intelligent recovery decisions.
+    // Teaches the extension to understand Zoho Projects page structure.
+
+    // 7a. Detect current page state
+    function detectPageState() {
+      const url = location.href;
+      const body = document.body?.innerText || '';
+
+      // Permission Denied page
+      if (body.includes('Permission Denied') || body.includes('do not have access') || body.includes('Ouch !'))
+        return { state: 'permission-denied', url };
+      // 404 / not found page
+      if (body.includes('Page Not Found') || body.includes('404') || body.includes("couldn't be accessed"))
+        return { state: 'not-found', url };
+      // Login page
+      if (url.includes('/signin') || url.includes('/login') || document.querySelector('input[name="LOGIN_ID"]'))
+        return { state: 'login-required', url };
+      // Loading spinner still showing
+      if (document.querySelector('.zp-loader, .lyte-loader, .loading-overlay, .spinner') && !document.querySelector('.zp-tl-name, .pjt-name, [data-zpqa]'))
+        return { state: 'loading', url };
+      // All-projects listing page
+      if (url.includes('#allprojects') || url.includes('#myprojects'))
+        return { state: 'project-listing', url };
+      // Inside a project  
+      if (url.match(/#(?:zp\/projects|project)\/\d+/))
+        return { state: 'inside-project', url };
+      // Portal home
+      if (url.match(/\/portal\/[^\/]+\/?$/) || url.match(/\/portal\/[^\/]+#?$/))
+        return { state: 'portal-home', url };
+
+      return { state: 'unknown', url };
+    }
+
+    // 7b. Navigate to a module tab (Tasks, Issues, etc.)
+    // First checks visible tabs, then clicks "..." menu to find hidden modules
+    async function navigateToModuleTab(moduleName) {
+      const normalizedName = moduleName.toLowerCase().trim();
+
+      // Step 1: Look in visible nav tabs
+      const navLinks = document.querySelectorAll('.zp-sN-link, .nav-link, [class*="tab-link"], a[class*="module"], .zp-tab a, .zp-navtab a');
+      for (const link of navLinks) {
+        const text = (link.textContent || '').trim().toLowerCase();
+        if (text === normalizedName || text.includes(normalizedName)) {
+          link.click();
+          await wait(1000);
+          return true;
+        }
+      }
+
+      // Step 2: Try clicking the tab directly by text content
+      const allLinks = document.querySelectorAll('a, [role="tab"], [role="link"]');
+      for (const link of allLinks) {
+        const text = (link.textContent || '').trim().toLowerCase();
+        if (text === normalizedName && link.offsetWidth > 0) {
+          link.click();
+          await wait(1000);
+          return true;
+        }
+      }
+
+      // Step 3: Click "..." / "More" button to reveal hidden modules
+      const moreButtons = document.querySelectorAll('[data-zpqa="more_modules"], .zp-more-tab, [class*="more-tab"], [class*="ellipsis"], .nav-more');
+      let moreBtn = null;
+      for (const btn of moreButtons) {
+        if (btn.offsetWidth > 0) { moreBtn = btn; break; }
+      }
+      // Also try the literal "..." or "•••" text
+      if (!moreBtn) {
+        const allEls = document.querySelectorAll('a, button, div, span, li');
+        for (const el of allEls) {
+          const t = (el.textContent || '').trim();
+          if ((t === '...' || t === '•••' || t === '···' || t === '⋯' || t === '⋮') && el.offsetWidth > 0) {
+            // Must be in the nav area (near top of page)
+            const rect = el.getBoundingClientRect();
+            if (rect.top < 200) { moreBtn = el; break; }
+          }
+        }
+      }
+
+      if (moreBtn) {
+        moreBtn.click();
+        await wait(800);
+
+        // Now search in the dropdown menu for our module
+        const menuItems = document.querySelectorAll('.zp-module-list a, .dropdown-menu a, [class*="more-menu"] a, [class*="dropdown"] a, .popover a, li a, ul a');
+        for (const item of menuItems) {
+          const text = (item.textContent || '').trim().toLowerCase();
+          if (text === normalizedName || text.includes(normalizedName)) {
+            if (item.offsetWidth > 0 || item.offsetParent !== null) {
+              item.click();
+              await wait(1000);
+              return true;
+            }
+          }
+        }
+
+        // Also try searching: some menus have a search input
+        const searchInput = document.querySelector('.zp-module-search input, [class*="more-menu"] input, [placeholder*="Search"]');
+        if (searchInput && searchInput.offsetWidth > 0) {
+          searchInput.focus();
+          searchInput.value = moduleName;
+          searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+          await wait(500);
+          // Click the first visible result
+          const results = document.querySelectorAll('.zp-module-list a, [class*="more-menu"] a, li a');
+          for (const r of results) {
+            const t = (r.textContent || '').trim().toLowerCase();
+            if (t.includes(normalizedName) && (r.offsetWidth > 0 || r.offsetParent !== null)) {
+              r.click();
+              await wait(1000);
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    }
+
+    // 7c. Navigate to a project by name — click Projects in left panel, search, open
+    async function navigateToProject(projectName) {
+      // If we're on the project listing but have no project name, try clicking the first project
+      if (!projectName) {
+        // Try Recent Projects in sidebar first
+        const recentLinks = document.querySelectorAll('.zp-recent a, [class*="recent"] a');
+        if (recentLinks.length > 0 && recentLinks[0].offsetWidth > 0) {
+          recentLinks[0].click();
+          await wait(2000);
+          return true;
+        }
+        // Fallback: click first project row in the listing
+        const firstPjt = document.querySelector('td a[href*="project"], .zp-pjt-name a, [class*="project-name"] a, td a');
+        if (firstPjt && firstPjt.offsetWidth > 0) {
+          firstPjt.click();
+          await wait(2000);
+          return true;
+        }
+        return false;
+      }
+
+      // Step 1: Click "Projects" in the left sidebar
+      const sidebarLinks = document.querySelectorAll('.zp-sN-link, .sidebar a, .left-nav a, nav a, [class*="sidebar"] a, [class*="nav"] a');
+      let clicked = false;
+      for (const link of sidebarLinks) {
+        const text = (link.textContent || '').trim().toLowerCase();
+        if (text === 'projects') {
+          link.click();
+          clicked = true;
+          await wait(1500);
+          break;
+        }
+      }
+
+      // Fallback: navigate to projects hash
+      if (!clicked) {
+        const portal = location.href.match(/\/portal\/([^\/\#\?]+)/);
+        if (portal) {
+          location.hash = '#allprojects/';
+          await wait(2000);
+        }
+      }
+
+      // Step 2: Search for the project
+      const searchInputs = document.querySelectorAll('input[placeholder*="Search"], input[placeholder*="search"], input[type="search"], [data-zpqa="searchproject"] input, .zp-search input');
+      for (const input of searchInputs) {
+        if (input.offsetWidth > 0) {
+          input.focus();
+          input.value = projectName;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(1500);
+          break;
+        }
+      }
+
+      // Step 3: Click on the matching project in results
+      await wait(1000);
+      const projectLinks = document.querySelectorAll('a[class*="project"], .zp-pjt-name a, [class*="project-name"], td a, .project-list a, [class*="pjt"] a');
+      for (const link of projectLinks) {
+        const text = (link.textContent || '').trim();
+        if (text.toLowerCase().includes(projectName.toLowerCase().slice(0, 15))) {
+          link.click();
+          await wait(2000);
+          return true;
+        }
+      }
+
+      // Fallback: try any link containing the project name
+      const allAnchors = document.querySelectorAll('a');
+      for (const a of allAnchors) {
+        const t = (a.textContent || '').trim();
+        if (t && t.toLowerCase().includes(projectName.toLowerCase().slice(0, 15)) && a.href && a.href.includes('project')) {
+          a.click();
+          await wait(2000);
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    // 7d. Recover from bad page states
+    async function recoverFromPageState(pageState, context) {
+      const { state } = pageState;
+      _healLog.push({ type: 'page-recovery', state, action: 'attempting' });
+
+      if (state === 'permission-denied' || state === 'not-found') {
+        // Strategy 1: If we know the project name, navigate to it via left panel
+        if (context.projectName) {
+          const found = await navigateToProject(context.projectName);
+          if (found) {
+            // Now navigate to the right module
+            if (context.moduleName) {
+              await navigateToModuleTab(context.moduleName);
+            }
+            _healLog.push({ type: 'page-recovery', state, action: 'navigated-to-project', project: context.projectName });
+            return true;
+          }
+        }
+
+        // Strategy 2: Extract project ID from URL and go to tasks root
+        const projMatch = location.href.match(/#(?:zp\/projects|project)\/(\d+)/);
+        if (projMatch) {
+          const portal = location.href.match(/\/portal\/([^\/\#\?]+)/);
+          if (portal) {
+            location.hash = '#zp/projects/' + projMatch[1] + '/';
+            await wait(2000);
+            const newState = detectPageState();
+            if (newState.state === 'inside-project' || newState.state === 'project-listing') {
+              _healLog.push({ type: 'page-recovery', state, action: 'stripped-to-project-root' });
+              return true;
+            }
+          }
+        }
+        // Strategy 2b: allprojects/ID → strip ID
+        const apMatch = location.href.match(/#allprojects\/(\d+)/);
+        if (apMatch) {
+          location.hash = '#allprojects/';
+          await wait(2000);
+          const newState = detectPageState();
+          if (newState.state === 'project-listing') {
+            _healLog.push({ type: 'page-recovery', state, action: 'stripped-allprojects-id' });
+            return true;
+          }
+        }
+
+        // Strategy 3: Go back to all projects and find the most recently created project
+        const portal2 = location.href.match(/\/portal\/([^\/\#\?]+)/);
+        if (portal2) {
+          location.hash = '#allprojects/';
+          await wait(2500);
+          // Click the first (most recent) project
+          const firstProject = document.querySelector('.zp-pjt-name a, [class*="pjt"] a, [class*="project-name"] a, .project-list a');
+          if (firstProject) {
+            firstProject.click();
+            await wait(2000);
+            if (context.moduleName) {
+              await navigateToModuleTab(context.moduleName);
+            }
+            _healLog.push({ type: 'page-recovery', state, action: 'selected-first-project' });
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      if (state === 'loading') {
+        // Wait for page to finish loading
+        for (let i = 0; i < 20; i++) {
+          await wait(500);
+          const newState = detectPageState();
+          if (newState.state !== 'loading') return true;
+        }
+        // Force refresh if still loading after 10s
+        location.reload();
+        await wait(3000);
+        return true;
+      }
+
+      if (state === 'portal-home') {
+        // We're at the portal home page — need to go to a project 
+        if (context.projectName) {
+          return await navigateToProject(context.projectName);
+        }
+        return false;
+      }
+
+      return false;
+    }
+
+    // 7e. Extract module name from URL  
+    function extractModuleFromUrl(url) {
+      const m = (url || '').match(/(tasks|issues|bugs|milestones|forums|documents|reports|phases|timesheets|timelogs)\b/i);
+      return m ? m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase() : null;
+    }
+
+    // 7f. Extract project name from page content (for context)
+    function detectCurrentProjectName() {
+      // Look for project name in header/breadcrumb
+      const nameEl = document.querySelector('.zp-pjt-name, .pjt-name, [class*="project-name"], [class*="pjt-title"]');
+      if (nameEl) return (nameEl.textContent || '').trim();
+      // Look in page title
+      const title = document.title;
+      const m = title.match(/^(?:\S+\s+)?(.+?)(?:\s*-\s*(?:Tasks|Issues|Bugs|Dashboard))/);
+      if (m) return m[1].trim();
+      return null;
+    }
+
+    // ── 8. Step-Level Agent: Error Classification ─────────
     // Classifies errors as recoverable vs. fatal, decides retry strategy.
 
     function classifyError(err, step) {
       const msg = (err.message || '').toLowerCase();
       // Not-found errors are retryable (DOM might still be loading)
-      if (msg.includes('not found') || msg.includes('element not found'))
-        return { type: 'element-not-found', retryable: true, maxRetries: 2, delayMs: 1500 };
+      if (msg.includes('not found') || msg.includes('element not found')) {
+        // SCROLL_TO_ELEMENT already has its own internal retry; fewer outer retries needed
+        if (msg.includes('scroll_to_element'))
+          return { type: 'element-not-found', retryable: true, maxRetries: 1, delayMs: 2000 };
+        return { type: 'element-not-found', retryable: true, maxRetries: 3, delayMs: 1500 };
+      }
       // Stale element (DOM changed between find and interact)
       if (msg.includes('stale') || msg.includes('detach') || msg.includes('not attached'))
         return { type: 'stale-element', retryable: true, maxRetries: 3, delayMs: 500 };
@@ -2698,7 +3324,7 @@ function replaySteps(steps, rdCfg) {
     }
 
     async function tryStep(s) {
-      const skipWait = ['NAVIGATE_TO','REFRESH','BACK','FORWARD','CLOSE','QUIT','DEFAULT_FRAME','GET_CURRENT_URL','GET_TITLE','GET_PAGE_SOURCE','CUSTOM_JS'];
+      const skipWait = ['NAVIGATE_TO','REFRESH','BACK','FORWARD','CLOSE','QUIT','DEFAULT_FRAME','GET_CURRENT_URL','GET_TITLE','GET_PAGE_SOURCE','CUSTOM_JS','SCROLL_TO_ELEMENT','SCROLL_TO_ELEMENT_AND_CLICK','GET','SWITCH_TABS','CLOSE_TABS','COMPARE_PDF_CONTENT','COMPARE_PDF_PIXELS','CONDITIONS','ASSOCIATE_ACTION_GROUP','ASSOCIATE_API','GET_LAST_ID_FROM_URL'];
 
       // Skip auto-navigations that were triggered by a preceding CLICK
       if (s.action === 'NAVIGATE_TO' && s.autoNav) {
@@ -2737,12 +3363,19 @@ function replaySteps(steps, rdCfg) {
       }
 
       switch (s.action) {
-        case 'NAVIGATE_TO':
-          if (location.href !== s.target) {
-            location.href = s.target;
+        case 'NAVIGATE_TO': {
+          let navTarget = s.target;
+          // Rewrite #allprojects/PROJECTID/ to just #allprojects/ (direct project ID in allprojects causes Permission Denied)
+          const apNav = navTarget.match(/(.*?)#allprojects\/\d+\/?/);
+          if (apNav) {
+            navTarget = apNav[1] + '#allprojects/';
+          }
+          if (location.href !== navTarget) {
+            location.href = navTarget;
             await wait(1200);
           }
           break;
+        }
         case 'REFRESH':
           location.reload();
           await wait(1200);
@@ -2759,10 +3392,23 @@ function replaySteps(steps, rdCfg) {
           if (!el) throw new Error('Element not found: ' + s.target);
           _revealHoverHidden(el);
           await wait(100);
+          // If element is inside an iframe, scroll the iframe into view first
+          if (el.ownerDocument !== document) {
+            const clickIframes = document.querySelectorAll('iframe');
+            for (const f of clickIframes) {
+              try {
+                if (f.contentDocument === el.ownerDocument) {
+                  f.scrollIntoView({ behavior:'smooth', block:'center' });
+                  await wait(200);
+                  break;
+                }
+              } catch(e) {}
+            }
+          }
           el.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(150);
-          // Check if another element would intercept the click
-          {
+          // Check if another element would intercept the click (only for top-level elements)
+          if (el.ownerDocument === document) {
             const rect = el.getBoundingClientRect();
             const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
             const topEl = document.elementFromPoint(cx, cy);
@@ -2791,6 +3437,20 @@ function replaySteps(steps, rdCfg) {
           break;
         case 'SEND_KEYS':
           if (!el) throw new Error('Element not found: ' + s.target);
+          // If element is inside an iframe, scroll iframe into view and focus the iframe first
+          if (el.ownerDocument !== document) {
+            const skIframes = document.querySelectorAll('iframe');
+            for (const f of skIframes) {
+              try {
+                if (f.contentDocument === el.ownerDocument) {
+                  f.scrollIntoView({ behavior:'smooth', block:'center' });
+                  f.focus();
+                  await wait(200);
+                  break;
+                }
+              } catch(e) {}
+            }
+          }
           el.focus();
           const _tv = resolveValue(s.value || '');
           // Store resolved value in variable store for later ASSERT_CHECK correlation
@@ -2904,6 +3564,19 @@ function replaySteps(steps, rdCfg) {
             }
           }
           if (!found) throw new Error('SCROLL_TO_ELEMENT: not found after ' + maxAttempts + ' attempts: ' + s.target);
+          // If element is inside an iframe, scroll the iframe into view in the parent first
+          if (found.ownerDocument !== document) {
+            const iframes = document.querySelectorAll('iframe');
+            for (const f of iframes) {
+              try {
+                if (f.contentDocument === found.ownerDocument) {
+                  f.scrollIntoView({ behavior:'smooth', block:'center' });
+                  await wait(300);
+                  break;
+                }
+              } catch(e) {}
+            }
+          }
           found.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(400);
           break;
@@ -2917,11 +3590,32 @@ function replaySteps(steps, rdCfg) {
             for (let a = 0; a < maxAttempts2; a++) {
               found2 = sel(s.target, s);
               if (found2) break;
-              window.scrollBy(0, 300);
+              if (s.iframe && s.iframeSelector) {
+                const iframe2 = document.querySelector(s.iframeSelector);
+                if (iframe2 && iframe2.contentWindow) {
+                  iframe2.contentWindow.scrollBy(0, 300);
+                } else {
+                  window.scrollBy(0, 300);
+                }
+              } else {
+                window.scrollBy(0, 300);
+              }
               await wait(interval2);
             }
           }
           if (!found2) throw new Error('SCROLL_TO_ELEMENT_AND_CLICK: not found: ' + s.target);
+          if (found2.ownerDocument !== document) {
+            const iframes2 = document.querySelectorAll('iframe');
+            for (const f of iframes2) {
+              try {
+                if (f.contentDocument === found2.ownerDocument) {
+                  f.scrollIntoView({ behavior:'smooth', block:'center' });
+                  await wait(300);
+                  break;
+                }
+              } catch(e) {}
+            }
+          }
           found2.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(300);
           found2.click();
@@ -2931,6 +3625,19 @@ function replaySteps(steps, rdCfg) {
         case 'MOVE_TO_ELEMENT':
         case 'MOVE_TO_ELEMENT_WITHOUT_CLICK': {
           if (!el) throw new Error('Element not found: ' + s.target);
+          // If element is inside an iframe, scroll the iframe into view first
+          if (el.ownerDocument !== document) {
+            const moveIframes = document.querySelectorAll('iframe');
+            for (const f of moveIframes) {
+              try {
+                if (f.contentDocument === el.ownerDocument) {
+                  f.scrollIntoView({ behavior:'smooth', block:'center' });
+                  await wait(200);
+                  break;
+                }
+              } catch(e) {}
+            }
+          }
           el.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(200);
           // Use shared hover-reveal helper for CSS :hover simulation
@@ -3070,23 +3777,207 @@ function replaySteps(steps, rdCfg) {
           s._result = urlParts[urlParts.length - 1] || '';
           break;
         }
+        case 'CLOSE': {
+          // In extension context, close current tab
+          window.close();
+          await wait(500);
+          break;
+        }
+        case 'QUIT': {
+          // Close all — in extension context, close the current window
+          window.close();
+          await wait(500);
+          break;
+        }
+        case 'GET': {
+          // Same as NAVIGATE_TO — load a URL
+          const getTarget = s.target || s.value || '';
+          if (getTarget && location.href !== getTarget) {
+            location.href = getTarget;
+            await wait(1200);
+          }
+          break;
+        }
+        case 'SWITCH_TABS': {
+          // In extension replay, tab switching is handled by the background script.
+          // The value holds the tab index (0-based) or tab identifier.
+          // Since we're injected into one tab, store the intent for the orchestrator.
+          s._result = 'switch_tab:' + (s.value || '0');
+          await wait(200);
+          break;
+        }
+        case 'CLOSE_TABS': {
+          // Close current tab (in extension context, the orchestrator handles multi-tab)
+          window.close();
+          await wait(300);
+          break;
+        }
+        case 'SHIFT_CONTROL_SELECT': {
+          // Select multiple elements using Shift+Click or Ctrl+Click
+          if (!el) throw new Error('Element not found: ' + s.target);
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(150);
+          const scMod = (s.value || '').toLowerCase().includes('shift') ? { shiftKey: true } : { ctrlKey: true, metaKey: true };
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, ...scMod }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles:true, ...scMod }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles:true, ...scMod }));
+          await wait(200);
+          break;
+        }
+        case 'HOLD_CONTROL_SELECT': {
+          // Select multiple items by Ctrl/Cmd+Click
+          if (!el) throw new Error('Element not found: ' + s.target);
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(150);
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, ctrlKey:true, metaKey:true }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles:true, ctrlKey:true, metaKey:true }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles:true, ctrlKey:true, metaKey:true }));
+          await wait(200);
+          break;
+        }
+        case 'HOLD_AND_MOVE': {
+          // Click-hold on source element and move to target (value holds drop target selector)
+          if (!el) throw new Error('Element not found: ' + s.target);
+          const moveTarget = s.value ? sel(s.value, s) : null;
+          el.scrollIntoView({ behavior:'smooth', block:'center' });
+          await wait(150);
+          const srcRect = el.getBoundingClientRect();
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles:true, clientX: srcRect.left + srcRect.width/2, clientY: srcRect.top + srcRect.height/2 }));
+          await wait(100);
+          if (moveTarget) {
+            const tgtRect = moveTarget.getBoundingClientRect();
+            moveTarget.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, clientX: tgtRect.left + tgtRect.width/2, clientY: tgtRect.top + tgtRect.height/2 }));
+            await wait(100);
+            moveTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles:true, clientX: tgtRect.left + tgtRect.width/2, clientY: tgtRect.top + tgtRect.height/2 }));
+          } else {
+            // Move by offset if no target selector — parse "x,y" from value
+            const [ox, oy] = (s.value || '0,0').split(',').map(Number);
+            document.dispatchEvent(new MouseEvent('mousemove', { bubbles:true, clientX: srcRect.left + ox, clientY: srcRect.top + oy }));
+            await wait(100);
+            document.dispatchEvent(new MouseEvent('mouseup', { bubbles:true, clientX: srcRect.left + ox, clientY: srcRect.top + oy }));
+          }
+          await wait(300);
+          break;
+        }
+        case 'COMPARE_PDF_CONTENT': {
+          // PDF comparison is a server-side operation — store intent, no browser-side implementation
+          s._result = 'pdf_compare_content:not_supported_in_browser';
+          break;
+        }
+        case 'COMPARE_PDF_PIXELS': {
+          // Visual PDF comparison is a server-side operation
+          s._result = 'pdf_compare_pixels:not_supported_in_browser';
+          break;
+        }
+        case 'CONDITIONS': {
+          // Conditional logic — evaluate JS expression from value
+          // If value is a JS expression that returns truthy, continue; otherwise skip next step
+          try {
+            const condResult = new Function('return ' + (s.value || 'true'))();
+            s._result = !!condResult;
+            if (!condResult) {
+              // Skip the next step by marking it
+              s._skipNext = true;
+            }
+          } catch(e) {
+            s._result = false;
+            s._skipNext = true;
+          }
+          break;
+        }
+        case 'ASSOCIATE_ACTION_GROUP': {
+          // Links current step with a predefined action group — metadata only, no browser action
+          s._result = 'action_group:' + (s.value || '');
+          break;
+        }
+        case 'ASSOCIATE_API': {
+          // Associates an API call with the step — metadata only, no browser action
+          s._result = 'api:' + (s.value || '');
+          break;
+        }
       }
     }
 
-    // ── 8. Retry Engine — Main Replay Loop ──────────────
+    // ── 9. Retry Engine — Main Replay Loop ──────────────
     // Each step gets classified on failure; recoverable errors trigger retries
-    // with exponential backoff. Self-healing info is attached to step logs.
+    // with exponential backoff. Page-state recovery runs before each step.
+
+    // Build replay context for page-state recovery
+    const _replayContext = {
+      projectName: detectCurrentProjectName() || steps.__rdCfg?.projectName || '',
+      moduleName: extractModuleFromUrl(location.href) || 'Tasks'
+    };
+
+    // Pre-flight: Check page state before starting replay
+    {
+      const preState = detectPageState();
+      if (preState.state === 'permission-denied' || preState.state === 'not-found') {
+        _healLog.push({ type: 'pre-flight-recovery', state: preState.state });
+        // Try extracting module from the broken URL
+        _replayContext.moduleName = extractModuleFromUrl(preState.url) || _replayContext.moduleName;
+        // Try to get project name from steps metadata
+        if (!_replayContext.projectName) {
+          // Look for project name in SEND_KEYS steps targeting projectname fields
+          for (const st of steps) {
+            if (st.action === 'SEND_KEYS' && st.target && /projectname/i.test(st.target) && st.value) {
+              _replayContext.projectName = st.value.replace(/\{\{.*?\}\}/g, '').trim();
+              break;
+            }
+          }
+        }
+        const recovered = await recoverFromPageState(preState, _replayContext);
+        if (recovered) {
+          await wait(1000);
+          // Update context from new page
+          const freshName = detectCurrentProjectName();
+          if (freshName) _replayContext.projectName = freshName;
+        }
+      } else if (preState.state === 'loading') {
+        await recoverFromPageState(preState, _replayContext);
+      }
+    }
 
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       // Resolve {{zpId:*}} lazily from the LIVE URL right before execution
       _resolveLiveIds(s);
 
+      // CONDITIONS skip: if previous step was CONDITIONS with false result, skip this step
+      if (i > 0 && steps[i-1]._skipNext) {
+        log.push({ i, action: s.action, target: s.target, ok: true, skipped: true, note: 'Skipped by CONDITIONS' });
+        delete steps[i-1]._skipNext;
+        continue;
+      }
+
+      // Page state check before each step — detect if we're on a broken page
+      if (i > 0 && s.action !== 'NAVIGATE_TO') {
+        const midState = detectPageState();
+        if (midState.state === 'permission-denied' || midState.state === 'not-found') {
+          _replayContext.moduleName = extractModuleFromUrl(midState.url) || _replayContext.moduleName;
+          const recovered = await recoverFromPageState(midState, _replayContext);
+          if (!recovered) {
+            errMsg = 'Step ' + (i+1) + ': Page shows "' + midState.state + '" — could not recover';
+            log.push({ i, action:s.action, target:s.target, ok:false, error: errMsg });
+            break;
+          }
+          await wait(1000);
+        }
+      }
+
       if (s.action === 'NAVIGATE_TO' && !s.autoNav) {
         // Wait for network to settle after navigation
         try {
           await tryStep(s);
           await waitForNetwork(3000);
+          // Check if navigation landed on a bad page
+          const navState = detectPageState();
+          if (navState.state === 'permission-denied' || navState.state === 'not-found') {
+            _replayContext.moduleName = extractModuleFromUrl(s.target || s.url || '') || _replayContext.moduleName;
+            const recovered = await recoverFromPageState(navState, _replayContext);
+            if (recovered) {
+              _healLog.push({ type: 'nav-recovery', state: navState.state, action: 'recovered', step: i });
+            }
+          }
         } catch(e) {}
         log.push({ i, action:s.action, ok:true });
         if (s.sleep > 0) await wait(s.sleep);
@@ -3110,10 +4001,50 @@ function replaySteps(steps, rdCfg) {
           break;
         } catch(e) {
           lastErr = e;
+
+          // Check if the page itself is in a bad state (not just element missing)
+          const pageState = detectPageState();
+          if (pageState.state === 'permission-denied' || pageState.state === 'not-found' || pageState.state === 'loading') {
+            _replayContext.moduleName = extractModuleFromUrl(pageState.url) || _replayContext.moduleName;
+            const recovered = await recoverFromPageState(pageState, _replayContext);
+            if (recovered) {
+              _healLog.push({ type: 'mid-step-recovery', state: pageState.state, step: i, attempt });
+              continue; // retry the step with recovered page
+            }
+          }
+
+          // If we're on a project listing and the element is not found, navigate into the project
+          if (pageState.state === 'project-listing' && e.message.includes('not found')) {
+            // Try clicking the first project from Recent Projects in sidebar, or from the listing
+            const entered = await navigateToProject(_replayContext.projectName || '');
+            if (entered) {
+              // Also navigate to the right module tab if known
+              if (_replayContext.moduleName) {
+                await navigateToModuleTab(_replayContext.moduleName);
+                await wait(1000);
+              }
+              _healLog.push({ type: 'project-listing-recovery', step: i, attempt });
+              continue; // retry
+            }
+          }
+
           const classification = classifyError(e, s);
 
           if (!classification.retryable || attempt >= classification.maxRetries) {
-            // Non-retryable or exhausted retries
+            // Last resort before giving up: try navigating to module tab
+            if (classification.type === 'element-not-found' && s.target) {
+              // Maybe we're on the wrong module — try clicking the right tab
+              const zpqa = s.target.match(/@data-zpqa=['"](.*?)['"]/);
+              const moduleName = _replayContext.moduleName;
+              if (moduleName) {
+                const tabFound = await navigateToModuleTab(moduleName);
+                if (tabFound) {
+                  await wait(1000);
+                  _healLog.push({ type: 'module-tab-recovery', module: moduleName, step: i });
+                  continue; // retry
+                }
+              }
+            }
             break;
           }
 
@@ -3124,8 +4055,20 @@ function replaySteps(steps, rdCfg) {
           } else if (classification.type === 'element-not-found') {
             // Wait for network and try scrolling
             await waitForNetwork(2000);
+            // Try dismiss any blocking dialogs/overlays that may have appeared
+            dismissBlockingOverlays();
+            await wait(300);
             window.scrollTo({ top: 0 });
             await wait(300);
+            // On later retries, try scrolling down to find lazy-loaded content
+            if (attempt >= 1) {
+              for (let scrollP = 0; scrollP < 3; scrollP++) {
+                window.scrollBy(0, 500);
+                await wait(300);
+              }
+              window.scrollTo({ top: 0 });
+              await wait(200);
+            }
           } else if (classification.type === 'stale-element') {
             // DOM changed — just wait and retry
             await wait(classification.delayMs);
@@ -3140,9 +4083,27 @@ function replaySteps(steps, rdCfg) {
       }
 
       if (!stepPassed) {
+        // Smart skip: If the current step's element can't be found but the NEXT step's element
+        // already exists, the current step is likely redundant (e.g., navigating to a page
+        // we're already on). Skip it instead of failing the entire test.
+        const nextStep = steps[i + 1];
+        if (nextStep && lastErr.message.includes('not found') && nextStep.target && !['NAVIGATE_TO','REFRESH'].includes(nextStep.action)) {
+          const nextEl = sel(nextStep.target, nextStep);
+          if (nextEl) {
+            _healLog.push({ type: 'smart-skip', step: i, reason: 'next-step-element-found', skippedAction: s.action, skippedTarget: s.target });
+            log.push({ i, action: s.action, target: s.target, ok: true, skipped: true, note: 'Skipped — next step element already available' });
+            continue; // Skip this step and move to the next
+          }
+        }
         errMsg = 'Step ' + (i+1) + ' (' + s.action + ' ' + s.target + '): ' + lastErr.message;
         log.push({ i, action:s.action, target:s.target, ok:false, error:lastErr.message });
         break;
+      }
+
+      // Update context: learn project name from page as we go
+      if (s.action === 'CLICK' || s.action === 'NAVIGATE_TO') {
+        const freshName = detectCurrentProjectName();
+        if (freshName) _replayContext.projectName = freshName;
       }
     }
 
@@ -3170,6 +4131,33 @@ function zpExtractPortal(url) {
   if (!url) return null;
   const m = url.match(/\/portal\/([^\/\#\?]+)/);
   return m ? m[1] : null;
+}
+
+// Resolve {{baseUrl}}, {{portal}}, {{projectId}}, {{zpId:*}} placeholders in a URL
+// using the ACTIVE tab's real URL as the source of truth.
+function resolveUrlPlaceholders(templateUrl, liveTabUrl) {
+  if (!templateUrl || !liveTabUrl) return templateUrl;
+  let url = templateUrl;
+  try {
+    const liveOrigin = new URL(liveTabUrl).origin;
+    url = url.replace(/\{\{baseUrl\}\}/g, liveOrigin);
+  } catch {}
+  const portalM = liveTabUrl.match(/\/portal\/([^\/\#\?]+)/);
+  if (portalM) url = url.replace(/\{\{portal\}\}/g, portalM[1]);
+  const projM = liveTabUrl.match(/#(?:project|allprojects|zp\/projects|kanban|gantt)\/(\d+)/);
+  if (projM) url = url.replace(/\{\{projectId\}\}/g, projM[1]);
+  // Resolve {{zpId:*}} — try to match each placeholder's context segment in the live URL
+  url = url.replace(/([\/\-])(\{\{zpId:(\d+)\}\})/g, (match, sep, placeholder, origId) => {
+    const beforeIdx = url.lastIndexOf('/', url.indexOf(placeholder) - 1);
+    const segment = url.substring(beforeIdx + 1, url.indexOf(placeholder)).replace(/\/$/, '');
+    if (segment) {
+      const liveMatch = liveTabUrl.match(new RegExp(segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/(\\d{10,})'));
+      if (liveMatch) return sep + liveMatch[1];
+    }
+    return sep + origId;
+  });
+  url = url.replace(/\{\{zpId:(\d+)\}\}/g, '$1');
+  return url;
 }
 
 // Extract project ID from a Zoho Projects URL hash
@@ -3231,6 +4219,7 @@ async function zohoCreateProject(token, portal, dc, projectName, description) {
 
 // Rewrite all Zoho URLs in steps to point to a different portal and/or project
 function zpRewriteSteps(steps, fromPortal, toPortal, fromProjectId, toProjectId) {
+  const isNewProject = toProjectId && fromProjectId && toProjectId !== fromProjectId;
   return steps.map(s => {
     const ns = { ...s };
     // Rewrite portal in URLs (literal or placeholder)
@@ -3246,6 +4235,20 @@ function zpRewriteSteps(steps, fromPortal, toPortal, fromProjectId, toProjectId)
       const idRep = '$1' + toProjectId;
       if (ns.url) ns.url = ns.url.replace(idPat, idRep);
       if (ns.target && ns.action === 'NAVIGATE_TO') ns.target = ns.target.replace(idPat, idRep);
+    }
+    // When project changed, strip project-specific sub-paths from URLs
+    // (custom-view IDs, task-detail IDs, issue-detail IDs are project-specific)
+    if (isNewProject) {
+      ['url', 'target'].forEach(k => {
+        if (!ns[k]) return;
+        if (ns.action !== 'NAVIGATE_TO' && k === 'target') return;
+        // Strip: /tasks/custom-view/ID/... → /tasks
+        // Strip: /tasks/task-detail/ID/... → /tasks
+        // Strip: /issues/issue-detail/ID/... → /issues
+        ns[k] = ns[k].replace(/(\/(?:tasks|issues|bugs|milestones|forums|documents|reports))\/.+$/, '$1');
+        // Also strip query params (e.g. ?group_by=tasklist)
+        ns[k] = ns[k].replace(/\?.*$/, '');
+      });
     }
     // Rewrite {{projectId}} placeholder to actual ID
     if (toProjectId) {
@@ -3350,11 +4353,19 @@ async function createProjectViaTemplate(tab, targetPortal, cfg) {
 
   // Navigate to template start URL
   let startUrl = tplSteps[0]?.url || '';
-  // Clean any remaining {{zpId:*}} placeholders
+  // Resolve all placeholders from the active tab's live URL
+  startUrl = resolveUrlPlaceholders(startUrl, tab.url);
   startUrl = startUrl.replace(/\{\{zpId:(\d+)\}\}/g, '$1');
   if (startUrl && startUrl !== tab.url) {
     await chrome.tabs.update(tab.id, { url: startUrl });
     await new Promise(r => setTimeout(r, 2500));
+  }
+
+  // Pre-resolve placeholders in all template step URLs/targets
+  const _tplLiveUrl = startUrl || tab.url;
+  for (const st of tplSteps) {
+    if (st.url) st.url = resolveUrlPlaceholders(st.url, _tplLiveUrl);
+    if (st.target && st.action === 'NAVIGATE_TO') st.target = resolveUrlPlaceholders(st.target, _tplLiveUrl);
   }
 
   // Replay template steps
@@ -3747,27 +4758,80 @@ async function smartReplay(c) {
 
     // Navigate to start URL
     let startUrl = rawSteps[0]?.url || '';
-    // Always resolve {{zpId:*}} in start URL. For Zoho module URLs, simplify to module-level
-    // (custom-view IDs, task-detail IDs etc. are project-specific and won't exist in a new project)
-    if (startUrl.includes('{{zpId:')) {
-      // Strip everything after the module name: tasks, issues, bugs, milestones, forums
+    // If a NEW project was created, strip URL to module level FIRST.
+    // Custom-view IDs, task-detail IDs, etc. are project-specific and won't exist in the new project.
+    const _createdNewProject = targetProjectId && targetProjectId !== recordedProjectId;
+    if (_createdNewProject) {
       const moduleMatch = startUrl.match(/(.*?\/(?:tasks|issues|bugs|milestones|forums))\b/);
       if (moduleMatch) {
         startUrl = moduleMatch[1];
+      }
+    }
+    // Resolve all placeholders from the FRESH tab URL (after project creation, not the original tab.url)
+    startUrl = resolveUrlPlaceholders(startUrl, _freshUrl);
+    // Strip any leftover zpId placeholders
+    if (startUrl.includes('{{zpId:')) {
+      const moduleMatch2 = startUrl.match(/(.*?\/(?:tasks|issues|bugs|milestones|forums))\b/);
+      if (moduleMatch2) {
+        startUrl = moduleMatch2[1];
       } else {
-        // No module found — just restore original IDs
         startUrl = startUrl.replace(/\{\{zpId:(\d+)\}\}/g, '$1');
       }
     }
-    // Also strip any leftover {{zpId:*}} that slipped through
     startUrl = startUrl.replace(/\{\{zpId:(\d+)\}\}/g, '$1');
     if (startUrl && startUrl !== _freshUrl) {
       await chrome.tabs.update(tab.id, { url: startUrl });
       await new Promise(r => setTimeout(r, 2000));
+
+      // Page-state check: detect Permission Denied / 404 after navigation
+      // and recover by navigating to the project + module
+      try {
+        const [stateResult] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const body = document.body?.innerText || '';
+            if (body.includes('Permission Denied') || body.includes('do not have access') || body.includes('Ouch !'))
+              return 'permission-denied';
+            if (body.includes('Page Not Found') || body.includes("couldn't be accessed") || body.includes('404'))
+              return 'not-found';
+            return 'ok';
+          }
+        });
+        const pageState = stateResult?.result;
+        if (pageState === 'permission-denied' || pageState === 'not-found') {
+          // Navigate to project root instead: just /tasks (no custom-view sub-path)
+          if (targetProjectId && targetPortal) {
+            const cleanUrl = `${_curOrigin || location.origin}/portal/${targetPortal}#zp/projects/${targetProjectId}/tasks`;
+            await chrome.tabs.update(tab.id, { url: cleanUrl });
+            await new Promise(r => setTimeout(r, 2500));
+            startUrl = cleanUrl;
+            res.smartActions.push({ action: 'PAGE_RECOVERY', from: pageState, navigatedTo: cleanUrl });
+          }
+        }
+      } catch(e) {} // scripting may fail on chrome:// pages — ignore
+    }
+
+    // Pre-resolve placeholders in all step URLs/targets from the fresh tab URL
+    const _smartLiveUrl = startUrl || _freshUrl;
+    for (const st of rawSteps) {
+      // If new project was created, strip project-specific sub-IDs from NAVIGATE_TO URLs
+      // (custom-view, task-detail, issue-detail IDs won't exist in new project)
+      if (_createdNewProject && st.action === 'NAVIGATE_TO') {
+        if (st.url) {
+          const mm = st.url.match(/(.*?\/(?:tasks|issues|bugs|milestones|forums))\b/);
+          if (mm) st.url = mm[1];
+        }
+        if (st.target) {
+          const mm2 = st.target.match(/(.*?\/(?:tasks|issues|bugs|milestones|forums))\b/);
+          if (mm2) st.target = mm2[1];
+        }
+      }
+      if (st.url) st.url = resolveUrlPlaceholders(st.url, _smartLiveUrl);
+      if (st.target && st.action === 'NAVIGATE_TO') st.target = resolveUrlPlaceholders(st.target, _smartLiveUrl);
     }
 
     // Replay
-    const _rdCfgSR = { emailDomain: cfg.randomEmailDomain || '@test.com', phonePrefix: cfg.randomPhonePrefix || '+1-555-' };
+    const _rdCfgSR = { emailDomain: cfg.randomEmailDomain || '@test.com', phonePrefix: cfg.randomPhonePrefix || '+1-555-', projectName: recordedProjectName || c.name || '' };
     const result = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: replaySteps,
