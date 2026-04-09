@@ -2017,6 +2017,7 @@ async function runCase(c) {
           res.note  = replayResult.note || ('Replayed ' + rawSteps.length + ' steps in ' + (new URL(startUrl||'http://x').hostname));
           res.error = replayResult.error || null;
           res.steps = replayResult.steps || [];
+          res.healed = replayResult.healed || null;
 
           // Remove test pill from page
           await chrome.scripting.executeScript({
@@ -2325,28 +2326,401 @@ function replaySteps(steps, rdCfg) {
       return v;
     }
 
-    async function waitForEl(selector, step, timeoutMs) {
-      const deadline = Date.now() + (timeoutMs || 10000);
-      let el = sel(selector, step);
-      while (!el && Date.now() < deadline) {
-        await wait(300);
-        el = sel(selector, step);
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    //  🧠 MINI-AGENT: SELF-HEALING REPLAY ENGINE
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    // ── 1. Network-Aware Smart Waiter ─────────────────────
+    // Wait until all pending XHR/fetch requests settle before acting on a step.
+    // This prevents "element not found" errors caused by clicking before the DOM has loaded.
+
+    const _pendingRequests = { count: 0 };
+    const _origXHROpen = XMLHttpRequest.prototype.open;
+    const _origXHRSend = XMLHttpRequest.prototype.send;
+    const _origFetch = window.fetch;
+
+    XMLHttpRequest.prototype.open = function() {
+      this.__webapi_tracked = true;
+      return _origXHROpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function() {
+      if (this.__webapi_tracked) {
+        _pendingRequests.count++;
+        this.addEventListener('loadend', () => { _pendingRequests.count = Math.max(0, _pendingRequests.count - 1); }, { once: true });
       }
-      return el;
+      return _origXHRSend.apply(this, arguments);
+    };
+    window.fetch = function() {
+      _pendingRequests.count++;
+      return _origFetch.apply(this, arguments).finally(() => { _pendingRequests.count = Math.max(0, _pendingRequests.count - 1); });
+    };
+
+    async function waitForNetwork(timeoutMs) {
+      const deadline = Date.now() + (timeoutMs || 5000);
+      // Wait until no pending requests for 300ms, or timeout
+      let quietSince = 0;
+      while (Date.now() < deadline) {
+        if (_pendingRequests.count === 0) {
+          if (!quietSince) quietSince = Date.now();
+          if (Date.now() - quietSince >= 300) return true;
+        } else {
+          quietSince = 0;
+        }
+        await wait(100);
+      }
+      return false; // timed out but continue anyway
+    }
+
+    // ── 2. Page State Recovery ────────────────────────────
+    // Dismiss unexpected overlays, modals, alerts, toasts that might block interaction.
+
+    function dismissBlockingOverlays() {
+      // Common modal/dialog close buttons
+      const closeSelectors = [
+        '.modal .close', '.modal-close', '[data-dismiss="modal"]',
+        '.toast-close', '.notification-close', '.alert-close',
+        '.lyte-modal-close', '.ly-close', '.zp-modal-close',
+        '.dialog-close', '[aria-label="Close"]', '[aria-label="close"]',
+        '.overlay-close', '.popup-close', '.banner-close',
+        '.cookie-close', '.cookie-accept',
+      ];
+      for (const cs of closeSelectors) {
+        const btn = document.querySelector(cs);
+        if (btn && btn.offsetWidth > 0 && getComputedStyle(btn).visibility !== 'hidden') {
+          btn.click();
+          return true;
+        }
+      }
+      // Check for blocking overlay divs (full-screen semi-transparent backgrounds)
+      const overlayDiv = document.querySelector('.modal-backdrop, .overlay-backdrop, .lyte-modal-bg, .zp-overlay');
+      if (overlayDiv && overlayDiv.offsetWidth > 0) {
+        // Try pressing Escape to close 
+        document.body.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, bubbles:true }));
+        return true;
+      }
+      return false;
+    }
+
+    // ── 3. Shadow DOM Piercing ────────────────────────────
+    // Deep search through shadow roots.
+
+    function deepQuerySelector(root, cssSelector) {
+      try {
+        const found = root.querySelector(cssSelector);
+        if (found) return found;
+      } catch(e) {}
+      // Walk shadow DOMs
+      const allEls = root.querySelectorAll('*');
+      for (const e of allEls) {
+        if (e.shadowRoot) {
+          try {
+            const found = deepQuerySelector(e.shadowRoot, cssSelector);
+            if (found) return found;
+          } catch(ex) {}
+        }
+      }
+      return null;
+    }
+
+    function deepXPathFind(root, xpath) {
+      try {
+        const result = root.evaluate(xpath, root, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        if (result.singleNodeValue) return result.singleNodeValue;
+      } catch(e) {}
+      const allEls = root.querySelectorAll('*');
+      for (const e of allEls) {
+        if (e.shadowRoot) {
+          try {
+            // Shadow roots don't support evaluate directly; search their children
+            const found = e.shadowRoot.querySelector('[data-zpqa]') || e.shadowRoot.querySelector('*');
+            if (found) {
+              const r = deepXPathFind(e.shadowRoot, xpath);
+              if (r) return r;
+            }
+          } catch(ex) {}
+        }
+      }
+      return null;
+    }
+
+    // ── 4. Self-Healing Element Finder ────────────────────
+    // 7-strategy cascade when the primary selector fails.
+    // Each strategy returns { el, strategy, selector } or null.
+
+    function _extractAttrFromSelector(selector) {
+      // Parse zpqa: //tag[@data-zpqa='value']
+      const zpqa = selector.match(/@data-zpqa=['"](.*?)['"]/);
+      if (zpqa) return { type: 'zpqa', value: zpqa[1] };
+      // Parse name: //tag[@name='value']
+      const name = selector.match(/@name=['"](.*?)['"]/);
+      if (name) return { type: 'name', value: name[1] };
+      // Parse id: //tag[@id='value']
+      const id = selector.match(/@id=['"](.*?)['"]/);
+      if (id) return { type: 'id', value: id[1] };
+      // Parse aria-label: //tag[@aria-label='value']
+      const aria = selector.match(/@aria-label=['"](.*?)['"]/);
+      if (aria) return { type: 'aria-label', value: aria[1] };
+      // Parse placeholder
+      const ph = selector.match(/@placeholder=['"](.*?)['"]/);
+      if (ph) return { type: 'placeholder', value: ph[1] };
+      // Parse data-testid
+      const testid = selector.match(/@data-testid=['"](.*?)['"]/);
+      if (testid) return { type: 'data-testid', value: testid[1] };
+      // Parse text contains
+      const text = selector.match(/contains\(text\(\),\s*['"](.*?)['"]\)/);
+      if (text) return { type: 'text', value: text[1] };
+      // Parse tag
+      const tag = selector.match(/^\/\/(\w+)/);
+      if (tag) return { type: 'tag', value: tag[1] };
+      return null;
+    }
+
+    function _extractTagFromSelector(selector) {
+      const m = selector.match(/^\/\/(\w+|\*)/);
+      return m ? m[1] : '*';
+    }
+
+    function healElement(selector, step) {
+      const attr = _extractAttrFromSelector(selector);
+      const tag = _extractTagFromSelector(selector);
+      if (!attr) return null;
+
+      const strategies = [];
+
+      // Strategy 1: Attribute value survived but tag changed
+      if (attr.type === 'zpqa') {
+        const el = document.querySelector(`[data-zpqa="${attr.value}"]`);
+        if (el) strategies.push({ el, strategy: 'zpqa-any-tag', selector: `//*[@data-zpqa='${attr.value}']` });
+      }
+
+      // Strategy 2: Search by text content (from step.text)
+      if (step && step.text) {
+        const searchText = step.text.trim();
+        if (searchText) {
+          const candidates = document.querySelectorAll(tag === '*' ? 'a,button,div,span,li,td,label,h1,h2,h3,h4,p' : tag);
+          for (const c of candidates) {
+            const ct = (c.textContent || '').trim();
+            if (ct === searchText || ct.includes(searchText)) {
+              strategies.push({ el: c, strategy: 'text-match', selector: `text="${searchText}"` });
+              break;
+            }
+          }
+        }
+      }
+
+      // Strategy 3: Partial attribute match (value changed slightly)
+      if (attr.type === 'name' || attr.type === 'id' || attr.type === 'zpqa' || attr.type === 'data-testid') {
+        // Try contains match
+        const allEls = document.querySelectorAll(`[${attr.type === 'zpqa' ? 'data-zpqa' : attr.type}]`);
+        for (const el of allEls) {
+          const val = el.getAttribute(attr.type === 'zpqa' ? 'data-zpqa' : attr.type);
+          if (val && (val.includes(attr.value) || attr.value.includes(val))) {
+            strategies.push({ el, strategy: 'partial-attr', selector: `[${attr.type}*="${attr.value}"]` });
+            break;
+          }
+        }
+      }
+
+      // Strategy 4: aria-label / title / tooltip fallback
+      if (step && step.text) {
+        const searchText = step.text.trim().slice(0, 40);
+        if (searchText) {
+          const byAria = document.querySelector(`[aria-label="${searchText}"], [title="${searchText}"], [data-tooltip="${searchText}"]`);
+          if (byAria) strategies.push({ el: byAria, strategy: 'aria-title-fallback', selector: `[aria-label="${searchText}"]` });
+        }
+      }
+
+      // Strategy 5: Positional hint — same tag near recorded bounds
+      if (step && step.bounds && step.bounds.x != null) {
+        const candidates = document.querySelectorAll(tag === '*' ? 'a,button,div,span,input,select,textarea' : tag);
+        let best = null, bestDist = Infinity;
+        for (const c of candidates) {
+          if (c.offsetWidth === 0) continue;
+          const r = c.getBoundingClientRect();
+          const dx = r.x - step.bounds.x, dy = r.y - step.bounds.y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < bestDist && dist < 100) { best = c; bestDist = dist; }
+        }
+        if (best) strategies.push({ el: best, strategy: 'position-proximity', selector: `positional(${step.bounds.x},${step.bounds.y})` });
+      }
+
+      // Strategy 6: Shadow DOM piercing
+      const isXPath = selector.startsWith('/');
+      if (!isXPath) {
+        const shadowEl = deepQuerySelector(document, selector);
+        if (shadowEl) strategies.push({ el: shadowEl, strategy: 'shadow-dom', selector });
+      }
+
+      // Strategy 7: CSS class fallback — look for elements with similar classes
+      const clsMatch = selector.match(/contains\(@class,\s*['"](.*?)['"]\)/);
+      if (clsMatch) {
+        const cls = clsMatch[1];
+        const el = document.querySelector(`.${cls}`) || document.querySelector(`[class*="${cls}"]`);
+        if (el) strategies.push({ el, strategy: 'class-fallback', selector: `.${cls}` });
+      }
+
+      // Return the first viable strategy (they are ordered by confidence)
+      for (const s of strategies) {
+        if (s.el && s.el.offsetParent !== null) return s; // visible element preferred
+      }
+      return strategies[0] || null; // return hidden element as last resort
+    }
+
+    // ── 5. Hover-Reveal Helper ────────────────────────────
+    // Reusable: inject CSS hover classes to reveal hidden elements.
+
+    function _revealHoverHidden(el) {
+      const cs = getComputedStyle(el);
+      if (el.offsetWidth === 0 || cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
+        const chain = [el]; let p = el.parentElement;
+        for (let i = 0; i < 5 && p; i++) { chain.push(p); p = p.parentElement; }
+        chain.forEach(h => h.classList.add('__webapi_hover'));
+        if (!document.getElementById('__webapi_hover_style')) {
+          const s = document.createElement('style'); s.id = '__webapi_hover_style';
+          s.textContent = `
+            .twoway-wrapper.__webapi_hover .twoway-back, .__webapi_hover > .twoway-back,
+            .twoway-wrapper:hover .twoway-back { display:block!important; visibility:visible!important; opacity:1!important; pointer-events:auto!important; }
+            .__webapi_hover>[class*="dropdown"], .__webapi_hover>[class*="menu"],
+            .__webapi_hover [class*="hover-show"], .__webapi_hover [class*="on-hover"] { display:block!important; visibility:visible!important; opacity:1!important; }
+          `;
+          document.head.appendChild(s);
+        }
+        // Dispatch mouse events on parent chain for JS-based hover listeners
+        chain.forEach(h => {
+          h.dispatchEvent(new MouseEvent('mouseenter', { bubbles:true }));
+          h.dispatchEvent(new MouseEvent('mouseover', { bubbles:true }));
+        });
+        setTimeout(() => { chain.forEach(h => h.classList.remove('__webapi_hover')); }, 4000);
+        return true;
+      }
+      return false;
+    }
+
+    // ── 6. Smart waitForEl with Self-Healing ──────────────
+    // Phase 1: Normal polling (fast cycle).
+    // Phase 2: Wait for network to settle, then retry.
+    // Phase 3: Dismiss overlays, scroll into view, retry.
+    // Phase 4: Activate self-healing strategies.
+    // Phase 5: Reveal hover-hidden elements, retry.
+
+    async function waitForEl(selector, step, timeoutMs) {
+      const timeout = timeoutMs || 12000;
+      const deadline = Date.now() + timeout;
+
+      // Phase 1: Fast polling (first 60% of timeout)
+      const phase1End = Date.now() + timeout * 0.5;
+      while (Date.now() < phase1End) {
+        const el = sel(selector, step);
+        if (el) return { el, healed: false };
+        await wait(250);
+      }
+
+      // Phase 2: Wait for network to idle, then retry
+      await waitForNetwork(2000);
+      {
+        const el = sel(selector, step);
+        if (el) return { el, healed: false };
+      }
+
+      // Phase 3: Dismiss blocking overlays and retry
+      if (dismissBlockingOverlays()) {
+        await wait(500);
+        const el = sel(selector, step);
+        if (el) return { el, healed: false };
+      }
+
+      // Phase 4: Auto-scroll to trigger lazy-loaded content
+      const scrollPositions = [0, 300, 600, 1000, document.body.scrollHeight];
+      for (const pos of scrollPositions) {
+        window.scrollTo({ top: pos, behavior: 'smooth' });
+        await wait(400);
+        const el = sel(selector, step);
+        if (el) return { el, healed: false };
+      }
+      // Scroll back to top
+      window.scrollTo({ top: 0 });
+      await wait(300);
+
+      // Phase 5: Activate self-healing — try alternative selectors
+      const healed = healElement(selector, step);
+      if (healed && healed.el) {
+        _healLog.push({ selector, strategy: healed.strategy, newSelector: healed.selector, step: step?.action });
+        return { el: healed.el, healed: true, strategy: healed.strategy, newSelector: healed.selector };
+      }
+
+      // Phase 6: Reveal hover-hidden (the element might exist but be invisible)
+      // Search all elements matching zpqa/name/id and try to reveal
+      const attr = _extractAttrFromSelector(selector);
+      if (attr && (attr.type === 'zpqa' || attr.type === 'name' || attr.type === 'id')) {
+        const attrName = attr.type === 'zpqa' ? 'data-zpqa' : attr.type;
+        const hiddenEl = document.querySelector(`[${attrName}="${attr.value}"]`);
+        if (hiddenEl) {
+          _revealHoverHidden(hiddenEl);
+          await wait(300);
+          return { el: hiddenEl, healed: true, strategy: 'hover-reveal' };
+        }
+      }
+
+      // Final: poll remaining time
+      while (Date.now() < deadline) {
+        const el = sel(selector, step);
+        if (el) return { el, healed: false };
+        await wait(300);
+      }
+      return { el: null, healed: false };
+    }
+
+    // Self-healing log — attached to results for debugging
+    const _healLog = [];
+
+    // ── 7. Step-Level Agent: Error Classification ─────────
+    // Classifies errors as recoverable vs. fatal, decides retry strategy.
+
+    function classifyError(err, step) {
+      const msg = (err.message || '').toLowerCase();
+      // Not-found errors are retryable (DOM might still be loading)
+      if (msg.includes('not found') || msg.includes('element not found'))
+        return { type: 'element-not-found', retryable: true, maxRetries: 2, delayMs: 1500 };
+      // Stale element (DOM changed between find and interact)
+      if (msg.includes('stale') || msg.includes('detach') || msg.includes('not attached'))
+        return { type: 'stale-element', retryable: true, maxRetries: 3, delayMs: 500 };
+      // Click intercepted (overlay, popup, animation)
+      if (msg.includes('intercept') || msg.includes('not clickable') || msg.includes('obscured'))
+        return { type: 'click-intercepted', retryable: true, maxRetries: 2, delayMs: 1000 };
+      // Assertion failure — non-recoverable but we can wait and retry once
+      if (msg.includes('assert') || msg.includes('does not contain'))
+        return { type: 'assertion-failed', retryable: true, maxRetries: 1, delayMs: 2000 };
+      // Navigation errors
+      if (msg.includes('navigat') || msg.includes('timeout'))
+        return { type: 'navigation-error', retryable: true, maxRetries: 1, delayMs: 3000 };
+      // Default: non-retryable
+      return { type: 'unknown', retryable: false, maxRetries: 0, delayMs: 0 };
     }
 
     async function tryStep(s) {
       const skipWait = ['NAVIGATE_TO','REFRESH','BACK','FORWARD','CLOSE','QUIT','DEFAULT_FRAME','GET_CURRENT_URL','GET_TITLE','GET_PAGE_SOURCE','CUSTOM_JS'];
 
       // Skip auto-navigations that were triggered by a preceding CLICK
-      // The click already caused the SPA navigation; replaying the NAVIGATE_TO would try to go to a URL with stale entity IDs
       if (s.action === 'NAVIGATE_TO' && s.autoNav) {
-        // Wait for the natural click-triggered navigation to settle
         await wait(800);
         return;
       }
 
-      const el = !skipWait.includes(s.action) ? await waitForEl(s.target, s, 10000) : null;
+      let el = null;
+      let healInfo = null;
+
+      if (!skipWait.includes(s.action)) {
+        const result = await waitForEl(s.target, s, 12000);
+        el = result.el;
+        healInfo = result.healed ? { strategy: result.strategy, newSelector: result.newSelector } : null;
+        if (healInfo) s._healInfo = healInfo; // Attach to step for logging
+
+        // If found via self-healing, reveal if hidden
+        if (el && result.healed) {
+          _revealHoverHidden(el);
+          await wait(200);
+        }
+      }
 
       // Helper for keyboard replay
       function parseKeyCombo(combo) {
@@ -2383,29 +2757,21 @@ function replaySteps(steps, rdCfg) {
           break;
         case 'CLICK':
           if (!el) throw new Error('Element not found: ' + s.target);
-          // If element is hidden (inside a CSS :hover-revealed container), reveal it first
-          {
-            const _cs = getComputedStyle(el);
-            if (el.offsetWidth === 0 || _cs.display === 'none' || _cs.visibility === 'hidden' || _cs.opacity === '0') {
-              const _hc = [el]; let _p = el.parentElement;
-              for (let _i = 0; _i < 5 && _p; _i++) { _hc.push(_p); _p = _p.parentElement; }
-              _hc.forEach(h => h.classList.add('__webapi_hover'));
-              if (!document.getElementById('__webapi_hover_style')) {
-                const _hs = document.createElement('style'); _hs.id = '__webapi_hover_style';
-                _hs.textContent = `
-                  .twoway-wrapper.__webapi_hover .twoway-back, .__webapi_hover > .twoway-back,
-                  .twoway-wrapper:hover .twoway-back { display:block!important; visibility:visible!important; opacity:1!important; pointer-events:auto!important; }
-                  .__webapi_hover>[class*="dropdown"], .__webapi_hover>[class*="menu"],
-                  .__webapi_hover [class*="hover-show"], .__webapi_hover [class*="on-hover"] { display:block!important; visibility:visible!important; opacity:1!important; }
-                `;
-                document.head.appendChild(_hs);
-              }
-              await wait(100);
-              setTimeout(() => { _hc.forEach(h => h.classList.remove('__webapi_hover')); }, 3000);
-            }
-          }
+          _revealHoverHidden(el);
+          await wait(100);
           el.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(150);
+          // Check if another element would intercept the click
+          {
+            const rect = el.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+            const topEl = document.elementFromPoint(cx, cy);
+            if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
+              // Something is blocking — try dismissing overlays
+              dismissBlockingOverlays();
+              await wait(300);
+            }
+          }
           el.click();
           await wait(300);
           break;
@@ -2567,30 +2933,8 @@ function replaySteps(steps, rdCfg) {
           if (!el) throw new Error('Element not found: ' + s.target);
           el.scrollIntoView({ behavior:'smooth', block:'center' });
           await wait(200);
-
-          // Inject CSS :hover simulation — dispatched events don't trigger CSS :hover pseudo-class.
-          // Walk up to the nearest interactive container and apply a temporary __hover class.
-          // Also inject a style rule that mirrors :hover rules for .twoway-wrapper and similar patterns.
-          const _hoverTargets = [el];
-          let _hp = el.parentElement;
-          for (let _hi = 0; _hi < 4 && _hp; _hi++) { _hoverTargets.push(_hp); _hp = _hp.parentElement; }
-          _hoverTargets.forEach(ht => ht.classList.add('__webapi_hover'));
-
-          // Inject mirror style: make __webapi_hover behave like :hover for common Zoho patterns
-          let _hoverStyle = document.getElementById('__webapi_hover_style');
-          if (!_hoverStyle) {
-            _hoverStyle = document.createElement('style');
-            _hoverStyle.id = '__webapi_hover_style';
-            _hoverStyle.textContent = `
-              .twoway-wrapper.__webapi_hover .twoway-back,
-              .__webapi_hover > .twoway-back,
-              .twoway-wrapper:hover .twoway-back { display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; }
-              .__webapi_hover > [class*="dropdown"], .__webapi_hover > [class*="menu"],
-              .__webapi_hover [class*="hover-show"], .__webapi_hover [class*="on-hover"] { display: block !important; visibility: visible !important; opacity: 1 !important; }
-            `;
-            document.head.appendChild(_hoverStyle);
-          }
-
+          // Use shared hover-reveal helper for CSS :hover simulation
+          _revealHoverHidden(el);
           // Also dispatch mouse events for JS-based hover listeners
           el.dispatchEvent(new MouseEvent('mouseenter', { bubbles:true, cancelable:true }));
           el.dispatchEvent(new MouseEvent('mouseover', { bubbles:true, cancelable:true }));
@@ -2601,8 +2945,6 @@ function replaySteps(steps, rdCfg) {
             el.click();
             await wait(300);
           }
-          // Clean up hover class after a delay (keep it long enough for next step to click revealed element)
-          setTimeout(() => { _hoverTargets.forEach(ht => ht.classList.remove('__webapi_hover')); }, 3000);
           break;
         }
         case 'MOVE_BY_OFFSET': {
@@ -2731,31 +3073,90 @@ function replaySteps(steps, rdCfg) {
       }
     }
 
+    // ── 8. Retry Engine — Main Replay Loop ──────────────
+    // Each step gets classified on failure; recoverable errors trigger retries
+    // with exponential backoff. Self-healing info is attached to step logs.
+
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       // Resolve {{zpId:*}} lazily from the LIVE URL right before execution
       _resolveLiveIds(s);
-      if (s.action === 'NAVIGATE_TO') {
+
+      if (s.action === 'NAVIGATE_TO' && !s.autoNav) {
+        // Wait for network to settle after navigation
+        try {
+          await tryStep(s);
+          await waitForNetwork(3000);
+        } catch(e) {}
         log.push({ i, action:s.action, ok:true });
         if (s.sleep > 0) await wait(s.sleep);
         continue;
       }
-      try {
-        await tryStep(s);
-        if (s.sleep > 0) await wait(s.sleep);
-        log.push({ i, action:s.action, target:s.target, ok:true });
-      } catch(e) {
-        errMsg = 'Step ' + (i+1) + ' (' + s.action + ' ' + s.target + '): ' + e.message;
-        log.push({ i, action:s.action, target:s.target, ok:false, error:e.message });
+
+      let lastErr = null;
+      let stepPassed = false;
+
+      // Retry loop with error classification
+      for (let attempt = 0; attempt <= 3; attempt++) {
+        try {
+          await tryStep(s);
+          if (s.sleep > 0) await wait(s.sleep);
+
+          const logEntry = { i, action:s.action, target:s.target, ok:true };
+          if (attempt > 0) logEntry.retries = attempt;
+          if (s._healInfo) logEntry.healed = s._healInfo;
+          log.push(logEntry);
+          stepPassed = true;
+          break;
+        } catch(e) {
+          lastErr = e;
+          const classification = classifyError(e, s);
+
+          if (!classification.retryable || attempt >= classification.maxRetries) {
+            // Non-retryable or exhausted retries
+            break;
+          }
+
+          // Recovery actions between retries based on error type
+          if (classification.type === 'click-intercepted') {
+            dismissBlockingOverlays();
+            await wait(500);
+          } else if (classification.type === 'element-not-found') {
+            // Wait for network and try scrolling
+            await waitForNetwork(2000);
+            window.scrollTo({ top: 0 });
+            await wait(300);
+          } else if (classification.type === 'stale-element') {
+            // DOM changed — just wait and retry
+            await wait(classification.delayMs);
+          } else if (classification.type === 'assertion-failed') {
+            // Content might still be loading
+            await waitForNetwork(3000);
+            await wait(classification.delayMs);
+          } else {
+            await wait(classification.delayMs);
+          }
+        }
+      }
+
+      if (!stepPassed) {
+        errMsg = 'Step ' + (i+1) + ' (' + s.action + ' ' + s.target + '): ' + lastErr.message;
+        log.push({ i, action:s.action, target:s.target, ok:false, error:lastErr.message });
         break;
       }
     }
 
+    // Restore original XHR/fetch prototypes
+    XMLHttpRequest.prototype.open = _origXHROpen;
+    XMLHttpRequest.prototype.send = _origXHRSend;
+    window.fetch = _origFetch;
+
     return {
       pass:  !errMsg,
       error: errMsg,
-      note:  'Replayed ' + log.length + '/' + steps.length + ' steps',
-      steps: log
+      note:  'Replayed ' + log.length + '/' + steps.length + ' steps' + (_healLog.length ? ' (' + _healLog.length + ' self-healed)' : ''),
+      steps: log,
+      healed: _healLog.length ? _healLog : undefined
     };
   })();
 }

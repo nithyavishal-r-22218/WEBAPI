@@ -1445,6 +1445,8 @@ function showRunResult(c, r) {
     + '</div>'
     + (r.error ? '<div style="background:var(--red-bg);border:1px solid rgba(240,91,91,.2);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--red);margin-bottom:10px">'+r.error+'</div>' : '')
     + (r.note  ? '<div style="background:var(--amber-bg);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--amber);margin-bottom:10px">'+r.note+'</div>' : '')
+    + (r.healed && r.healed.length ? '<div style="background:#1a2f1a;border:1px solid rgba(72,199,142,.25);border-radius:8px;padding:9px 11px;font-size:11px;color:#48c78e;margin-bottom:10px"><b>🩹 Self-Healed (' + r.healed.length + '):</b><br>' + r.healed.map(h => '• <code>' + (h.selector||'').slice(0,40) + '</code> → <b>' + h.strategy + '</b>').join('<br>') + '</div>' : '')
+    + (r.steps && r.steps.length ? '<div style="margin-top:6px;font-size:11px;color:var(--fg2)"><b>Steps:</b><br>' + r.steps.map((st,idx) => '<span style="color:'+(st.ok?'#48c78e':'#f05b5b')+'">' + (st.ok?'✓':'✗') + ' ' + (idx+1) + '. ' + st.action + (st.retries ? ' <span style="color:#fabd2f">(retry×'+st.retries+')</span>' : '') + (st.healed ? ' <span style="color:#48c78e">🩹 '+st.healed.strategy+'</span>' : '') + '</span>').join('<br>') + '</div>' : '')
     + (r.body  ? '<div class="fld"><label>Response</label><textarea class="ta" readonly style="min-height:80px">'+r.body.slice(0,600)+'</textarea></div>' : '');
   openModal('runModal');
 }
