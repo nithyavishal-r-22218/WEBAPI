@@ -2242,7 +2242,6 @@ async function runCase(c) {
           res.note  = replayResult.note || ('Replayed ' + rawSteps.length + ' steps in ' + (new URL(startUrl||'http://x').hostname));
           res.error = replayResult.error || null;
           res.steps = replayResult.steps || [];
-          res.healed = replayResult.healed || null;
 
           // Remove test pill from page
           await chrome.scripting.executeScript({
@@ -2738,129 +2737,6 @@ function replaySteps(steps, rdCfg) {
       return null;
     }
 
-    // ── 4. Self-Healing Element Finder ────────────────────
-    // 7-strategy cascade when the primary selector fails.
-    // Each strategy returns { el, strategy, selector } or null.
-
-    function _extractAttrFromSelector(selector) {
-      // Parse zpqa: //tag[@data-zpqa='value']
-      const zpqa = selector.match(/@data-zpqa=['"](.*?)['"]/);
-      if (zpqa) return { type: 'zpqa', value: zpqa[1] };
-      // Parse name: //tag[@name='value']
-      const name = selector.match(/@name=['"](.*?)['"]/);
-      if (name) return { type: 'name', value: name[1] };
-      // Parse id: //tag[@id='value']
-      const id = selector.match(/@id=['"](.*?)['"]/);
-      if (id) return { type: 'id', value: id[1] };
-      // Parse aria-label: //tag[@aria-label='value']
-      const aria = selector.match(/@aria-label=['"](.*?)['"]/);
-      if (aria) return { type: 'aria-label', value: aria[1] };
-      // Parse placeholder
-      const ph = selector.match(/@placeholder=['"](.*?)['"]/);
-      if (ph) return { type: 'placeholder', value: ph[1] };
-      // Parse data-testid
-      const testid = selector.match(/@data-testid=['"](.*?)['"]/);
-      if (testid) return { type: 'data-testid', value: testid[1] };
-      // Parse text contains
-      const text = selector.match(/contains\(text\(\),\s*['"](.*?)['"]\)/);
-      if (text) return { type: 'text', value: text[1] };
-      // Parse tag
-      const tag = selector.match(/^\/\/(\w+)/);
-      if (tag) return { type: 'tag', value: tag[1] };
-      return null;
-    }
-
-    function _extractTagFromSelector(selector) {
-      const m = selector.match(/^\/\/(\w+|\*)/);
-      return m ? m[1] : '*';
-    }
-
-    function healElement(selector, step) {
-      const attr = _extractAttrFromSelector(selector);
-      const tag = _extractTagFromSelector(selector);
-      if (!attr) return null;
-
-      const strategies = [];
-
-      // Strategy 1: Attribute value survived but tag changed
-      if (attr.type === 'zpqa') {
-        const el = document.querySelector(`[data-zpqa="${attr.value}"]`);
-        if (el) strategies.push({ el, strategy: 'zpqa-any-tag', selector: `//*[@data-zpqa='${attr.value}']` });
-      }
-
-      // Strategy 2: Search by text content (from step.text)
-      if (step && step.text) {
-        const searchText = step.text.trim();
-        if (searchText) {
-          const candidates = document.querySelectorAll(tag === '*' ? 'a,button,div,span,li,td,label,h1,h2,h3,h4,p' : tag);
-          for (const c of candidates) {
-            const ct = (c.textContent || '').trim();
-            if (ct === searchText || ct.includes(searchText)) {
-              strategies.push({ el: c, strategy: 'text-match', selector: `text="${searchText}"` });
-              break;
-            }
-          }
-        }
-      }
-
-      // Strategy 3: Partial attribute match (value changed slightly)
-      if (attr.type === 'name' || attr.type === 'id' || attr.type === 'zpqa' || attr.type === 'data-testid') {
-        // Try contains match
-        const allEls = document.querySelectorAll(`[${attr.type === 'zpqa' ? 'data-zpqa' : attr.type}]`);
-        for (const el of allEls) {
-          const val = el.getAttribute(attr.type === 'zpqa' ? 'data-zpqa' : attr.type);
-          if (val && (val.includes(attr.value) || attr.value.includes(val))) {
-            strategies.push({ el, strategy: 'partial-attr', selector: `[${attr.type}*="${attr.value}"]` });
-            break;
-          }
-        }
-      }
-
-      // Strategy 4: aria-label / title / tooltip fallback
-      if (step && step.text) {
-        const searchText = step.text.trim().slice(0, 40);
-        if (searchText) {
-          const byAria = document.querySelector(`[aria-label="${searchText}"], [title="${searchText}"], [data-tooltip="${searchText}"]`);
-          if (byAria) strategies.push({ el: byAria, strategy: 'aria-title-fallback', selector: `[aria-label="${searchText}"]` });
-        }
-      }
-
-      // Strategy 5: Positional hint — same tag near recorded bounds
-      if (step && step.bounds && step.bounds.x != null) {
-        const candidates = document.querySelectorAll(tag === '*' ? 'a,button,div,span,input,select,textarea' : tag);
-        let best = null, bestDist = Infinity;
-        for (const c of candidates) {
-          if (c.offsetWidth === 0) continue;
-          const r = c.getBoundingClientRect();
-          const dx = r.x - step.bounds.x, dy = r.y - step.bounds.y;
-          const dist = Math.sqrt(dx*dx + dy*dy);
-          if (dist < bestDist && dist < 100) { best = c; bestDist = dist; }
-        }
-        if (best) strategies.push({ el: best, strategy: 'position-proximity', selector: `positional(${step.bounds.x},${step.bounds.y})` });
-      }
-
-      // Strategy 6: Shadow DOM piercing
-      const isXPath = selector.startsWith('/');
-      if (!isXPath) {
-        const shadowEl = deepQuerySelector(document, selector);
-        if (shadowEl) strategies.push({ el: shadowEl, strategy: 'shadow-dom', selector });
-      }
-
-      // Strategy 7: CSS class fallback — look for elements with similar classes
-      const clsMatch = selector.match(/contains\(@class,\s*['"](.*?)['"]\)/);
-      if (clsMatch) {
-        const cls = clsMatch[1];
-        const el = document.querySelector(`.${cls}`) || document.querySelector(`[class*="${cls}"]`);
-        if (el) strategies.push({ el, strategy: 'class-fallback', selector: `.${cls}` });
-      }
-
-      // Return the first viable strategy (they are ordered by confidence)
-      for (const s of strategies) {
-        if (s.el && s.el.offsetParent !== null) return s; // visible element preferred
-      }
-      return strategies[0] || null; // return hidden element as last resort
-    }
-
     // ── 5. Hover-Reveal Helper ────────────────────────────
     // Reusable: inject CSS hover classes to reveal hidden elements.
 
@@ -2908,7 +2784,7 @@ function replaySteps(steps, rdCfg) {
       const phase1End = Date.now() + timeout * 0.5;
       while (Date.now() < phase1End) {
         const el = sel(selector, step);
-        if (el) return { el, healed: false };
+        if (el) return { el };
         await wait(250);
       }
 
@@ -2916,14 +2792,14 @@ function replaySteps(steps, rdCfg) {
       await waitForNetwork(2000);
       {
         const el = sel(selector, step);
-        if (el) return { el, healed: false };
+        if (el) return { el };
       }
 
       // Phase 3: Dismiss blocking overlays and retry
       if (dismissBlockingOverlays()) {
         await wait(500);
         const el = sel(selector, step);
-        if (el) return { el, healed: false };
+        if (el) return { el };
       }
 
       // Phase 4: Auto-scroll to trigger lazy-loaded content
@@ -2932,58 +2808,20 @@ function replaySteps(steps, rdCfg) {
         window.scrollTo({ top: pos, behavior: 'smooth' });
         await wait(400);
         const el = sel(selector, step);
-        if (el) return { el, healed: false };
+        if (el) return { el };
       }
       // Scroll back to top
       window.scrollTo({ top: 0 });
       await wait(300);
 
-      // Phase 5: Activate self-healing — try alternative selectors
-      const healed = healElement(selector, step);
-      if (healed && healed.el) {
-        _healLog.push({ selector, strategy: healed.strategy, newSelector: healed.selector, step: step?.action });
-        return { el: healed.el, healed: true, strategy: healed.strategy, newSelector: healed.selector };
-      }
-
-      // Phase 6: Reveal hover-hidden (the element might exist but be invisible)
-      // Search all elements matching zpqa/name/id and try to reveal
-      const attr = _extractAttrFromSelector(selector);
-      if (attr && (attr.type === 'zpqa' || attr.type === 'name' || attr.type === 'id')) {
-        const attrName = attr.type === 'zpqa' ? 'data-zpqa' : attr.type;
-        // Search top-level document
-        const hiddenEl = document.querySelector(`[${attrName}="${attr.value}"]`);
-        if (hiddenEl) {
-          _revealHoverHidden(hiddenEl);
-          await wait(300);
-          return { el: hiddenEl, healed: true, strategy: 'hover-reveal' };
-        }
-        // Also search inside iframes
-        const allIframes = document.querySelectorAll('iframe');
-        for (const f of allIframes) {
-          try {
-            if (f.contentDocument) {
-              const iframeHidden = f.contentDocument.querySelector(`[${attrName}="${attr.value}"]`);
-              if (iframeHidden) {
-                f.scrollIntoView({ behavior:'smooth', block:'center' });
-                await wait(200);
-                return { el: iframeHidden, healed: true, strategy: 'hover-reveal-iframe' };
-              }
-            }
-          } catch(e) {}
-        }
-      }
-
-      // Final: poll remaining time
+      // Phase 5: Final poll remaining time
       while (Date.now() < deadline) {
         const el = sel(selector, step);
-        if (el) return { el, healed: false };
+        if (el) return { el };
         await wait(300);
       }
-      return { el: null, healed: false };
+      return { el: null };
     }
-
-    // Self-healing log — attached to results for debugging
-    const _healLog = [];
 
     // ── 7. Page-Aware Agent ─────────────────────────────
     // Analyzes the current page state and makes intelligent recovery decisions.
@@ -3190,7 +3028,7 @@ function replaySteps(steps, rdCfg) {
     // 7d. Recover from bad page states
     async function recoverFromPageState(pageState, context) {
       const { state } = pageState;
-      _healLog.push({ type: 'page-recovery', state, action: 'attempting' });
+      _recoveryLog.push({ type: 'page-recovery', state, action: 'attempting' });
 
       if (state === 'permission-denied' || state === 'not-found') {
         // Strategy 1: If we know the project name, navigate to it via left panel
@@ -3201,7 +3039,7 @@ function replaySteps(steps, rdCfg) {
             if (context.moduleName) {
               await navigateToModuleTab(context.moduleName);
             }
-            _healLog.push({ type: 'page-recovery', state, action: 'navigated-to-project', project: context.projectName });
+            _recoveryLog.push({ type: 'page-recovery', state, action: 'navigated-to-project', project: context.projectName });
             return true;
           }
         }
@@ -3215,7 +3053,7 @@ function replaySteps(steps, rdCfg) {
             await wait(2000);
             const newState = detectPageState();
             if (newState.state === 'inside-project' || newState.state === 'project-listing') {
-              _healLog.push({ type: 'page-recovery', state, action: 'stripped-to-project-root' });
+              _recoveryLog.push({ type: 'page-recovery', state, action: 'stripped-to-project-root' });
               return true;
             }
           }
@@ -3227,7 +3065,7 @@ function replaySteps(steps, rdCfg) {
           await wait(2000);
           const newState = detectPageState();
           if (newState.state === 'project-listing') {
-            _healLog.push({ type: 'page-recovery', state, action: 'stripped-allprojects-id' });
+            _recoveryLog.push({ type: 'page-recovery', state, action: 'stripped-allprojects-id' });
             return true;
           }
         }
@@ -3245,7 +3083,7 @@ function replaySteps(steps, rdCfg) {
             if (context.moduleName) {
               await navigateToModuleTab(context.moduleName);
             }
-            _healLog.push({ type: 'page-recovery', state, action: 'selected-first-project' });
+            _recoveryLog.push({ type: 'page-recovery', state, action: 'selected-first-project' });
             return true;
           }
         }
@@ -3333,19 +3171,10 @@ function replaySteps(steps, rdCfg) {
       }
 
       let el = null;
-      let healInfo = null;
 
       if (!skipWait.includes(s.action)) {
         const result = await waitForEl(s.target, s, 12000);
         el = result.el;
-        healInfo = result.healed ? { strategy: result.strategy, newSelector: result.newSelector } : null;
-        if (healInfo) s._healInfo = healInfo; // Attach to step for logging
-
-        // If found via self-healing, reveal if hidden
-        if (el && result.healed) {
-          _revealHoverHidden(el);
-          await wait(200);
-        }
       }
 
       // Helper for keyboard replay
@@ -3902,6 +3731,9 @@ function replaySteps(steps, rdCfg) {
     // Each step gets classified on failure; recoverable errors trigger retries
     // with exponential backoff. Page-state recovery runs before each step.
 
+    // Recovery log for page-state / nav-state recovery events
+    const _recoveryLog = [];
+
     // Build replay context for page-state recovery
     const _replayContext = {
       projectName: detectCurrentProjectName() || steps.__rdCfg?.projectName || '',
@@ -3912,7 +3744,7 @@ function replaySteps(steps, rdCfg) {
     {
       const preState = detectPageState();
       if (preState.state === 'permission-denied' || preState.state === 'not-found') {
-        _healLog.push({ type: 'pre-flight-recovery', state: preState.state });
+        _recoveryLog.push({ type: 'pre-flight-recovery', state: preState.state });
         // Try extracting module from the broken URL
         _replayContext.moduleName = extractModuleFromUrl(preState.url) || _replayContext.moduleName;
         // Try to get project name from steps metadata
@@ -3975,7 +3807,7 @@ function replaySteps(steps, rdCfg) {
             _replayContext.moduleName = extractModuleFromUrl(s.target || s.url || '') || _replayContext.moduleName;
             const recovered = await recoverFromPageState(navState, _replayContext);
             if (recovered) {
-              _healLog.push({ type: 'nav-recovery', state: navState.state, action: 'recovered', step: i });
+              _recoveryLog.push({ type: 'nav-recovery', state: navState.state, action: 'recovered', step: i });
             }
           }
         } catch(e) {}
@@ -3995,7 +3827,6 @@ function replaySteps(steps, rdCfg) {
 
           const logEntry = { i, action:s.action, target:s.target, ok:true };
           if (attempt > 0) logEntry.retries = attempt;
-          if (s._healInfo) logEntry.healed = s._healInfo;
           log.push(logEntry);
           stepPassed = true;
           break;
@@ -4008,7 +3839,7 @@ function replaySteps(steps, rdCfg) {
             _replayContext.moduleName = extractModuleFromUrl(pageState.url) || _replayContext.moduleName;
             const recovered = await recoverFromPageState(pageState, _replayContext);
             if (recovered) {
-              _healLog.push({ type: 'mid-step-recovery', state: pageState.state, step: i, attempt });
+              _recoveryLog.push({ type: 'mid-step-recovery', state: pageState.state, step: i, attempt });
               continue; // retry the step with recovered page
             }
           }
@@ -4023,7 +3854,7 @@ function replaySteps(steps, rdCfg) {
                 await navigateToModuleTab(_replayContext.moduleName);
                 await wait(1000);
               }
-              _healLog.push({ type: 'project-listing-recovery', step: i, attempt });
+              _recoveryLog.push({ type: 'project-listing-recovery', step: i, attempt });
               continue; // retry
             }
           }
@@ -4040,7 +3871,7 @@ function replaySteps(steps, rdCfg) {
                 const tabFound = await navigateToModuleTab(moduleName);
                 if (tabFound) {
                   await wait(1000);
-                  _healLog.push({ type: 'module-tab-recovery', module: moduleName, step: i });
+                  _recoveryLog.push({ type: 'module-tab-recovery', module: moduleName, step: i });
                   continue; // retry
                 }
               }
@@ -4090,7 +3921,7 @@ function replaySteps(steps, rdCfg) {
         if (nextStep && lastErr.message.includes('not found') && nextStep.target && !['NAVIGATE_TO','REFRESH'].includes(nextStep.action)) {
           const nextEl = sel(nextStep.target, nextStep);
           if (nextEl) {
-            _healLog.push({ type: 'smart-skip', step: i, reason: 'next-step-element-found', skippedAction: s.action, skippedTarget: s.target });
+            _recoveryLog.push({ type: 'smart-skip', step: i, reason: 'next-step-element-found', skippedAction: s.action, skippedTarget: s.target });
             log.push({ i, action: s.action, target: s.target, ok: true, skipped: true, note: 'Skipped — next step element already available' });
             continue; // Skip this step and move to the next
           }
@@ -4115,9 +3946,8 @@ function replaySteps(steps, rdCfg) {
     return {
       pass:  !errMsg,
       error: errMsg,
-      note:  'Replayed ' + log.length + '/' + steps.length + ' steps' + (_healLog.length ? ' (' + _healLog.length + ' self-healed)' : ''),
-      steps: log,
-      healed: _healLog.length ? _healLog : undefined
+      note:  'Replayed ' + log.length + '/' + steps.length + ' steps',
+      steps: log
     };
   })();
 }

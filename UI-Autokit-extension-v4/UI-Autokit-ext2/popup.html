@@ -105,12 +105,19 @@ button:active::after{opacity:1;transition:opacity 0s}
 .tabs{display:flex;background:var(--glass2);backdrop-filter:var(--blur-s);-webkit-backdrop-filter:var(--blur-s);border-bottom:1px solid var(--b);padding:0 6px;flex-shrink:0;overflow-x:auto}
 .tabs::-webkit-scrollbar{display:none}
 .tab{display:flex;align-items:center;gap:5px;padding:9px 10px;font-size:11.5px;font-weight:500;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;user-select:none;margin-bottom:-1px;flex-shrink:0;transition:all .25s cubic-bezier(.4,0,.2,1);position:relative}
+.tab svg{width:14px;height:14px;flex-shrink:0;transition:all .3s cubic-bezier(.4,0,.2,1)}
 .tab:hover:not(.on){color:var(--t2);background:var(--glass3);border-radius:var(--rs) var(--rs) 0 0;transform:translateY(-1px)}
+.tab:hover:not(.on) svg{transform:scale(1.15)}
 .tab.on{color:var(--brand);font-weight:600;border-bottom-color:var(--brand)}
+.tab.on svg{color:var(--brand);animation:tabIconPop .35s cubic-bezier(.34,1.56,.64,1)}
 .tab.on::after{content:'';position:absolute;bottom:0;left:20%;right:20%;height:2px;background:var(--brand);border-radius:2px;animation:tabSlide .3s ease}
-.tab-settings{padding:9px 10px;font-size:13px;display:flex;align-items:center;cursor:pointer;color:var(--t3);border-bottom:2px solid transparent;margin-bottom:-1px;user-select:none;transition:all .15s;flex-shrink:0}
+@keyframes tabIconPop{0%{transform:scale(.6) rotate(-12deg);opacity:.4}60%{transform:scale(1.2) rotate(4deg)}100%{transform:scale(1) rotate(0deg)}}
+.tab-settings{padding:9px 10px;font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--t3);border-bottom:2px solid transparent;margin-bottom:-1px;user-select:none;transition:all .15s;flex-shrink:0}
+.tab-settings svg{width:14px;height:14px;transition:transform .4s cubic-bezier(.4,0,.2,1)}
+.tab-settings:hover svg{transform:rotate(90deg)}
 .tab-settings:hover,.tab-settings.on{color:var(--brand)}
 .tab-settings.on{border-bottom-color:var(--brand)}
+.tab-settings.on svg{animation:gearSpin .6s ease}
 .tbadge{font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:var(--rf);background:var(--glass3);color:var(--t3)}
 .tab.on .tbadge{background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff}
 .tab.on .tbadge{background:linear-gradient(135deg,#3b82f6,#8b5cf6);color:#fff}
@@ -190,7 +197,16 @@ button:active::after{opacity:1;transition:opacity 0s}
 .ri{flex:1;min-width:0}
 .rname{font-size:12.5px;font-weight:600;color:var(--tx)}
 .rmeta{font-size:10.5px;color:var(--t3);margin-top:1px}
-.racts{display:flex;gap:3px}
+.racts{display:flex;gap:3px;opacity:0;pointer-events:none;transform:translateX(12px);transition:opacity .3s cubic-bezier(.4,0,.2,1),transform .3s cubic-bezier(.4,0,.2,1)}
+.rcard:hover .racts{opacity:1;pointer-events:auto;transform:translateX(0)}
+.rcard:hover .racts .ia{animation:popIn .25s cubic-bezier(.34,1.56,.64,1) both}
+.rcard:hover .racts .ia:nth-child(1){animation-delay:0s}
+.rcard:hover .racts .ia:nth-child(2){animation-delay:.04s}
+.rcard:hover .racts .ia:nth-child(3){animation-delay:.08s}
+.rcard:hover .racts .ia:nth-child(4){animation-delay:.12s}
+.rcard:hover .racts .ia:nth-child(5){animation-delay:.16s}
+.rcard:hover .racts .ia:nth-child(6){animation-delay:.2s}
+@keyframes popIn{0%{opacity:0;transform:scale(.5) translateY(4px)}100%{opacity:1;transform:scale(1) translateY(0)}}
 .ia{width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:var(--t3);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s cubic-bezier(.4,0,.2,1);flex-shrink:0}
 .ia svg{pointer-events:none;flex-shrink:0}
 .ia:hover{transform:translateY(-1px);color:var(--tx)}
@@ -273,6 +289,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 
 /* BUTTONS */
 .btn{display:inline-flex;align-items:center;gap:5px;padding:8px 15px;border-radius:var(--rf);font-size:12.5px;font-weight:600;border:none;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);white-space:nowrap;user-select:none}
+.btn svg{width:13px;height:13px;flex-shrink:0;transition:transform .2s ease}
 .btn-dark{background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.25)}.btn-dark:hover{background:linear-gradient(135deg,#2563eb,#4f46e5);box-shadow:0 6px 20px rgba(59,130,246,.4);transform:translateY(-2px)}
 .btn-dark:active{transform:scale(.96)}
 .btn-outline{background:var(--glass);backdrop-filter:var(--blur-s);-webkit-backdrop-filter:var(--blur-s);border:1px solid var(--glassborder);color:var(--t2)}.btn-outline:hover{background:var(--glass2);color:var(--tx);border-color:rgba(59,130,246,.2)}
@@ -352,6 +369,17 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 /* Zoho integration */
 .zo-rec-name{font-size:12px;font-weight:600;color:#1e293b;padding:6px 10px;background:var(--glass2);border-radius:var(--rs);border:1px solid var(--b)}\n.zo-attach{display:flex;flex-direction:column;gap:6px;margin-top:8px}\n.zo-attach-chk{display:flex;align-items:center;gap:6px;font-size:11px;color:#334155;cursor:pointer}\n.zo-attach-chk input[type=checkbox]{accent-color:var(--brand);width:14px;height:14px}\n.zo-task{background:var(--glass);border:1px solid var(--glassborder);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s}\n.zo-task:hover{border-color:rgba(34,197,94,.3);box-shadow:var(--shm);transform:translateX(2px)}\n.zo-task-name{font-size:12px;font-weight:600;color:#1e293b}\n.zo-task-meta{font-size:10px;color:#64748b;margin-top:2px;display:flex;gap:8px;align-items:center}\n.zo-task-badge{display:inline-flex;padding:1px 6px;border-radius:var(--rf);font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}\n.zo-task-badge.has-steps{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.15)}\n.zo-task-badge.no-steps{background:rgba(156,163,175,.1);color:var(--t3);border:1px solid rgba(156,163,175,.15)}\n.zo-detail{font-size:11.5px;color:#334155;line-height:1.7}\n.zo-detail b{color:#1e293b}\n.zo-detail pre{padding:8px 10px;background:var(--glass2);border-radius:var(--rs);font-size:10px;font-family:'DM Mono',monospace;overflow:auto;max-height:140px;margin:6px 0;border:1px solid var(--b);white-space:pre-wrap;word-break:break-all;color:#334155}
 
+/* Bulk checkbox rows — performant CSS (no inline styles on 500+ elements) */
+.bulk-chk-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:11.5px;color:var(--tx);transition:background .15s}
+.bulk-chk-row:hover{background:rgba(59,130,246,.08)}
+.bulk-chk-bordered{padding:8px 10px;border-radius:8px;border:1px solid var(--b)}
+.bulk-chk-bordered:hover{border-color:rgba(59,130,246,.3)}
+.bulk-chk-row input[type=checkbox]{accent-color:var(--brand);width:15px;height:15px;flex-shrink:0;margin:0}
+.bulk-chk-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.bulk-chk-meta{font-size:10px;color:var(--t3);flex-shrink:0;margin-left:auto;padding-left:8px}
+.bulk-chk-badge{font-size:9px;padding:1px 6px;border-radius:99px;background:rgba(148,163,184,.12);color:var(--t3);flex-shrink:0}
+.bulk-chk-imported{font-size:9px;padding:1px 6px;border-radius:99px;background:rgba(52,211,153,.1);color:#22c55e;flex-shrink:0}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -410,14 +438,14 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 </header>
 
 <div class="tabs" id="tabBar">
-  <div class="tab on" id="t-record">⏺ Record</div>
-  <div class="tab" id="t-library">📂 Library <span class="tbadge" id="tb-lib">0</span></div>
-  <div class="tab" id="t-generate" style="display:none">⚡ Generate</div>
-  <div class="tab" id="t-tests" style="display:none">🧪 Tests <span class="tbadge" id="tb-tests">0</span></div>
-  <div class="tab" id="t-results">📊 Results <span class="tbadge" id="tb-results">0</span></div>
+  <div class="tab on" id="t-record"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="12" r="7"/></svg> Record</div>
+  <div class="tab" id="t-library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Library <span class="tbadge" id="tb-lib">0</span></div>
+  <div class="tab" id="t-generate" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Generate</div>
+  <div class="tab" id="t-tests" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5a6 6 0 0 1-6 0V3z"/><path d="M12 14v7"/><path d="M8 21h8"/><path d="M7 8V3"/><path d="M17 8V3"/></svg> Tests <span class="tbadge" id="tb-tests">0</span></div>
+  <div class="tab" id="t-results"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg> Results <span class="tbadge" id="tb-results">0</span></div>
   <div class="tab" id="t-zoho"><svg width="14" height="14" viewBox="0 0 48 48" fill="none" style="vertical-align:-2px;margin-right:2px"><path d="M6 28l10 10" stroke="#e53935" stroke-width="5.5" stroke-linecap="round"/><path d="M16 38l8-8" stroke="#f9a825" stroke-width="5.5" stroke-linecap="round"/><path d="M24 30l8-10" stroke="#43a047" stroke-width="5.5" stroke-linecap="round"/><path d="M32 20l10-12" stroke="#1e88e5" stroke-width="5.5" stroke-linecap="round"/><path d="M14 20l10 10" stroke="#f9a825" stroke-width="5.5" stroke-linecap="round" opacity=".6"/><path d="M24 30l14-18" stroke="#1e88e5" stroke-width="5.5" stroke-linecap="round" opacity=".6"/></svg> ZP</div>
   <div class="tgap"></div>
-  <div class="tab-settings" id="t-settings" title="Settings">⚙ Settings</div>
+  <div class="tab-settings" id="t-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Settings</div>
 </div>
 
 <div class="pages">
@@ -426,15 +454,15 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
   <div class="pg on" id="pg-record">
     <div class="hero" id="heroDiv">
       <div class="hero-inner">
-        <div class="hero-ring" id="heroRing"><span id="heroIco">⏺</span></div>
+        <div class="hero-ring" id="heroRing"><span id="heroIco"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" stroke="none"><circle cx="12" cy="12" r="7"/></svg></span></div>
         <div class="hero-copy">
           <div class="hero-title" id="heroTitle">Click to Start Recording</div>
           <div class="hero-sub" id="heroSub">Captures clicks · inputs · navigation</div>
         </div>
       </div>
       <div class="hero-foot">
-        <span>🖱 <b>Click</b></span><span>⌨️ <b>Type</b></span>
-        <span>✅ <b>Double-click</b> to assert</span><span>🖥️ <b>UI Flow Captured</b></span>
+        <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M4 4h6v6H4z"/><path d="M14 4h6v6h-6z"/><path d="M4 14h6v6H4z"/><circle cx="17" cy="17" r="3"/></svg> <b>Click</b></span><span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/></svg> <b>Type</b></span>
+        <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M20 6L9 17l-5-5"/></svg> <b>Double-click</b> to assert</span><span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> <b>UI Flow Captured</b></span>
       </div>
     </div>
     <div id="locatorResult" style="display:none;background:var(--sf);border:1px solid var(--b);border-radius:var(--r);padding:10px 12px;margin-bottom:12px"></div>
@@ -442,12 +470,12 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div class="sec-lbl">Steps <span class="sec-cnt" id="stepCnt">0</span></div>
       <div class="sbtn-row">
         <button class="btn btn-ghost btn-xs" id="clearBtn">Clear</button>
-        <button class="btn btn-outline btn-xs" id="nameBtn">✏ Name</button>
-        <button class="btn btn-outline btn-xs" id="runLiveBtn" title="Run the current recording">▶ Run</button>
+        <button class="btn btn-outline btn-xs" id="nameBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Name</button>
+        <button class="btn btn-outline btn-xs" id="runLiveBtn" title="Run the current recording"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6,3 20,12 6,21"/></svg> Run</button>
         <button class="btn btn-dark btn-xs" id="saveRecBtn" disabled>Save</button>
       </div>
     </div>
-    <div id="stepsWrap"><div class="empty"><div class="ei">⏺</div><div class="et">Start recording to see steps here</div></div></div>
+    <div id="stepsWrap"><div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg></div><div class="et">Start recording to see steps here</div></div></div>
     <div id="netSection" class="net-sec" style="display:none">
       <div class="sec-row" style="margin-top:12px">
         <div class="sec-lbl">UI Flow Captured <span class="sec-cnt" id="netCnt">0</span></div>
@@ -462,7 +490,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div style="font-size:14px;font-weight:700;letter-spacing:-.2px">Recordings</div>
       <button class="btn btn-dark btn-sm" id="newRecBtn">+ New</button>
     </div>
-    <div id="libWrap"><div class="empty"><div class="ei">📂</div><div class="et">No recordings yet</div></div></div>
+    <div id="libWrap"><div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><div class="et">No recordings yet</div></div></div>
   </div>
 
   <!-- GENERATE -->
@@ -487,7 +515,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <button class="lbtn" data-lang="java">Java</button>
       <button class="lbtn" data-lang="csharp">C#</button>
     </div>
-    <button class="btn btn-dark btn-full" id="genBtn">⚡ Generate Code</button>
+    <button class="btn btn-dark btn-full" id="genBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Generate Code</button>
     <div id="codeWrap" style="display:none">
       <div class="codepanel">
         <div class="codetop">
@@ -510,7 +538,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div style="font-size:14px;font-weight:700;letter-spacing:-.2px">Test Cases</div>
       <button class="btn btn-dark btn-sm" id="addCaseBtn">+ New</button>
     </div>
-    <div id="testsWrap"><div class="empty"><div class="ei">🧪</div><div class="et">No test cases yet</div></div></div>
+    <div id="testsWrap"><div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5a6 6 0 0 1-6 0V3z"/><path d="M12 14v7"/><path d="M8 21h8"/><path d="M7 8V3"/><path d="M17 8V3"/></svg></div><div class="et">No test cases yet</div></div></div>
   </div>
 
   <!-- RESULTS -->
@@ -519,7 +547,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div style="font-size:14px;font-weight:700;letter-spacing:-.2px">Run History</div>
       <button class="btn btn-ghost btn-sm" id="clearResultsBtn">Clear</button>
     </div>
-    <div id="resultsWrap"><div class="empty"><div class="ei">📊</div><div class="et">No results yet</div></div></div>
+    <div id="resultsWrap"><div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div><div class="et">No results yet</div></div></div>
   </div>
 
   <!-- ZP CONNECTION -->
@@ -527,13 +555,17 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
     <div style="font-size:14px;font-weight:700;letter-spacing:-.2px;margin-bottom:12px">ZP Connection</div>
 
     <!-- EXPORT -->
-    <div class="sec-lbl" style="margin-bottom:8px">Export Recording to ZP</div>
+    <div class="sec-lbl" style="margin-bottom:8px">Export Recordings to ZP</div>
     <div class="scard" style="margin-bottom:10px">
       <div class="scard-body" style="padding:10px 14px">
-        <div class="fld"><label>Recording</label>
-          <select class="sel" id="zohoExpRec"><option value="">— Select —</option></select>
+        <div class="fld"><label>Recordings</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--t2);cursor:pointer"><input type="checkbox" id="zohoExpSelectAll" style="accent-color:var(--brand);width:14px;height:14px"/> Select All</label>
+            <span id="zohoExpCount" style="font-size:10px;color:var(--t3)">0 selected</span>
+          </div>
+          <div id="zohoExpRecList" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;border:1px solid var(--b);border-radius:var(--rs);padding:8px"></div>
         </div>
-        <button class="btn btn-dark btn-full" id="zohoExportBtn" disabled>📤 Export to ZP</button>
+        <button class="btn btn-dark btn-full" id="zohoExportBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export Selected to ZP</button>
       </div>
     </div>
 
@@ -550,7 +582,10 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
         <div class="fld"><label>Task</label>
           <select class="sel" id="ziTask" disabled><option value="">Select a project first</option></select>
         </div>
-        <button class="btn btn-dark btn-full" id="zohoImportBtn" disabled>📥 View Task &amp; Import</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-dark" style="flex:1" id="zohoImportBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> View Task &amp; Import</button>
+          <button class="btn btn-outline" style="flex:1" id="zohoBulkImportBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Import All Tasks</button>
+        </div>
       </div>
     </div>
 
@@ -649,7 +684,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       </div>
     </div>
     <div class="scard">
-      <div class="scard-hd"><div class="scard-ico">⚡</div><div><div style="font-size:13px;font-weight:600">Code Generation Defaults</div></div></div>
+      <div class="scard-hd"><div class="scard-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div><div><div style="font-size:13px;font-weight:600">Code Generation Defaults</div></div></div>
       <div class="scard-body">
         <div class="r2">
           <div class="fld"><label>Framework</label>
@@ -821,7 +856,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       </div>
       <div id="seRandomApplied" class="rd-applied" style="display:none">
         <div class="rd-applied-info"><span class="rd-tag" id="rdAppliedTag"></span></div>
-        <button class="rd-edit-btn" id="seRandomEdit">✏️ Edit</button>
+        <button class="rd-edit-btn" id="seRandomEdit"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
         <button class="rd-remove-btn" id="seRandomRemove">✕ Remove</button>
       </div>
       <div id="seLinkWrap" style="display:none;margin-top:6px">
@@ -857,7 +892,7 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
       <div class="rd-types">
         <div class="rd-type" data-rtype="taskname"><span class="rd-type-ico">📋</span><div class="rd-type-nm">Task Name</div></div>
         <div class="rd-type" data-rtype="bugname"><span class="rd-type-ico">🐛</span><div class="rd-type-nm">Bug Name</div></div>
-        <div class="rd-type" data-rtype="projectname"><span class="rd-type-ico">📂</span><div class="rd-type-nm">Project</div></div>
+        <div class="rd-type" data-rtype="projectname"><span class="rd-type-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span><div class="rd-type-nm">Project</div></div>
         <div class="rd-type" data-rtype="username"><span class="rd-type-ico">👤</span><div class="rd-type-nm">User Name</div></div>
         <div class="rd-type" data-rtype="phone"><span class="rd-type-ico">📱</span><div class="rd-type-nm">Phone</div></div>
         <div class="rd-type" data-rtype="date"><span class="rd-type-ico">📅</span><div class="rd-type-nm">Date</div></div>
@@ -896,26 +931,50 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
 <!-- ZOHO EXPORT MODAL -->
 <div class="ov" id="zohoExportModal">
   <div class="modal">
-    <div class="mhd"><span class="mtl">📤 Export to ZP</span><button class="mx" id="closeZohoExportModal">✕</button></div>
+    <div class="mhd"><span class="mtl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export to ZP</span><button class="mx" id="closeZohoExportModal">✕</button></div>
     <div class="mbd">
-      <div class="fld"><label>Recording</label><div class="zo-rec-name" id="zeRecName">—</div></div>
+      <div class="fld"><label>Recordings</label><div class="zo-rec-name" id="zeRecName">—</div></div>
       <div class="fld"><label>Project</label>
         <select class="sel" id="zeProject"><option value="">Loading projects…</option></select>
       </div>
       <div class="fld"><label>Tasklist</label>
         <select class="sel" id="zeTasklist" disabled><option value="">Select a project first</option></select>
       </div>
-      <div class="fld"><label>Task Name</label><input class="inp" id="zeTaskName" placeholder="Auto-filled from recording"/></div>
-      <div class="fld"><label>Description</label><textarea class="inp" id="zeTaskDesc" rows="3" placeholder="Test steps and metadata…" style="resize:vertical;font-family:inherit;min-height:54px"></textarea></div>
+      <div id="zeSingleFields">
+        <div class="fld"><label>Task Name</label><input class="inp" id="zeTaskName" placeholder="Auto-filled from recording"/></div>
+        <div class="fld"><label>Description</label><textarea class="inp" id="zeTaskDesc" rows="3" placeholder="Test steps and metadata…" style="resize:vertical;font-family:inherit;min-height:54px"></textarea></div>
+      </div>
       <div class="zo-attach">
         <label class="zo-attach-chk"><input type="checkbox" id="zeAttachSteps" checked/> Attach steps JSON</label>
         <label class="zo-attach-chk"><input type="checkbox" id="zeAttachCode" checked/> Attach generated test code</label>
       </div>
       <div id="zeStatus" style="display:none;margin-top:6px;font-size:10.5px;padding:6px 10px;border-radius:var(--rs)"></div>
+      <div id="zeBulkProgress" style="display:none;margin-top:8px"></div>
     </div>
     <div class="mft">
       <button class="btn btn-ghost btn-sm" id="cancelZohoExportBtn">Cancel</button>
-      <button class="btn btn-dark btn-sm" id="doZohoExportBtn">📤 Export</button>
+      <button class="btn btn-dark btn-sm" id="doZohoExportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Export</button>
+    </div>
+  </div>
+</div>
+
+<!-- ZOHO BULK IMPORT MODAL -->
+<div class="ov" id="zohoBulkImportModal">
+  <div class="modal">
+    <div class="mhd"><span class="mtl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Bulk Import Tasks</span><button class="mx" id="closeZohoBulkImportModal">✕</button></div>
+    <div class="mbd">
+      <div id="zbiInfo" style="font-size:11.5px;color:var(--t2);margin-bottom:10px">Loading tasks…</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--t2);cursor:pointer"><input type="checkbox" id="zbiSelectAll" style="accent-color:var(--brand);width:14px;height:14px"/> Select All</label>
+        <span id="zbiCount" style="font-size:10px;color:var(--t3)">0 selected</span>
+      </div>
+      <div id="zbiList" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+      <div id="zbiStatus" style="display:none;margin-top:8px;font-size:10.5px;padding:6px 10px;border-radius:var(--rs)"></div>
+      <div id="zbiProgress" style="display:none;margin-top:8px"></div>
+    </div>
+    <div class="mft">
+      <button class="btn btn-ghost btn-sm" id="cancelZohoBulkImportBtn">Cancel</button>
+      <button class="btn btn-dark btn-sm" id="doZohoBulkImportBtn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Import Selected</button>
     </div>
   </div>
 </div>
@@ -931,8 +990,8 @@ pre{background:#0f172a;margin:0;padding:13px 14px;font-family:"DM Mono",monospac
     </div>
     <div class="mft">
       <button class="btn btn-ghost btn-sm" id="cancelZohoImportBtn">Cancel</button>
-      <button class="btn btn-outline btn-sm" id="ziRunBtn">▶ Run Test</button>
-      <button class="btn btn-dark btn-sm" id="ziImportBtn">📥 Import to Library</button>
+      <button class="btn btn-outline btn-sm" id="ziRunBtn"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6,3 20,12 6,21"/></svg> Run Test</button>
+      <button class="btn btn-dark btn-sm" id="ziImportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Import to Library</button>
     </div>
   </div>
 </div>

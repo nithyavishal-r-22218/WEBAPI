@@ -480,7 +480,14 @@ function bindAll() {
   $('zpPortalToggle').addEventListener('click', () => toggleZpSection('zpPortalBody', 'zpPortalArrow'));
   $('zpEnvToggle').addEventListener('click', () => toggleZpSection('zpEnvBody', 'zpEnvArrow'));
   $('zohoExportBtn').addEventListener('click', openZohoExportModal);
-  $('zohoExpRec').addEventListener('change', () => { $('zohoExportBtn').disabled = !gv('zohoExpRec'); });
+  // Bulk export checkboxes
+  $('zohoExpSelectAll').addEventListener('change', (e) => {
+    document.querySelectorAll('.zoho-exp-chk').forEach(cb => cb.checked = e.target.checked);
+    updateBulkExportCount();
+  });
+  $('zohoExpRecList').addEventListener('change', (e) => {
+    if (e.target.classList.contains('zoho-exp-chk')) updateBulkExportCount();
+  });
   $('closeZohoExportModal').addEventListener('click', () => closeModal('zohoExportModal'));
   $('cancelZohoExportBtn').addEventListener('click', () => closeModal('zohoExportModal'));
   $('doZohoExportBtn').addEventListener('click', doZohoExport);
@@ -494,6 +501,15 @@ function bindAll() {
   $('cancelZohoImportBtn').addEventListener('click', () => closeModal('zohoImportModal'));
   $('ziImportBtn').addEventListener('click', importZohoTask);
   $('ziRunBtn').addEventListener('click', runZohoTask);
+  // Bulk import
+  $('zohoBulkImportBtn').addEventListener('click', openZohoBulkImportModal);
+  $('closeZohoBulkImportModal').addEventListener('click', () => closeModal('zohoBulkImportModal'));
+  $('cancelZohoBulkImportBtn').addEventListener('click', () => closeModal('zohoBulkImportModal'));
+  $('doZohoBulkImportBtn').addEventListener('click', doZohoBulkImport);
+  $('zbiSelectAll').addEventListener('change', (e) => {
+    document.querySelectorAll('.zbi-task-chk').forEach(cb => cb.checked = e.target.checked);
+    updateBulkImportCount();
+  });
 
 
   document.querySelectorAll('.ov').forEach(m =>
@@ -745,7 +761,7 @@ function setRecUI(isRec) {
     if (inspBtn) { inspBtn.disabled = true; inspBtn.style.opacity = '0.4'; inspBtn.style.pointerEvents = 'none'; }
   } else {
     ring.classList.remove('on'); if(pill) pill.classList.remove('on');
-    ico.textContent = '⏺'; if(txt) txt.textContent = '● Rec';
+    ico.textContent = ''; ico.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" stroke="none"><circle cx="12" cy="12" r="7"/></svg>'; if(txt) txt.textContent = 'Rec';
     const n = G.live.steps.length;
     title.textContent = n > 0 ? '✓ Done — ' + n + ' steps saved to Library' : 'Click to Start Recording';
     sub.textContent   = n > 0 ? 'View in Library · Generate code · Run test' : 'Captures clicks · inputs · navigation';
@@ -758,7 +774,7 @@ function renderSteps() {
   $('stepCnt').textContent = steps.length;
   const wrap = $('stepsWrap');
   if (!steps.length) {
-    wrap.innerHTML = '<div class="empty"><div class="ei">⏺</div><div class="et">Start recording to see steps here</div></div>';
+    wrap.innerHTML = '<div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/></svg></div><div class="et">Start recording to see steps here</div></div>';
     return;
   }
   wrap.innerHTML = '<div class="steps-list">' + steps.map((s,i) => {
@@ -1019,7 +1035,7 @@ const ICO = {
   edit:     _sv('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'),
   play:     _sv('<polygon points="6,3 20,12 6,21" fill="currentColor" stroke="none"/>'),
   smart:    _sv('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="currentColor" stroke="none" opacity=".85"/>'),
-  tpl:      _sv('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
+  tpl:      _sv('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),  
   tplOn:    _sv('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" fill="currentColor"/>'),
   rename:   _sv('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>'),
   trash:    _sv('<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/>'),
@@ -1090,7 +1106,7 @@ function renderLibrary() {
   $('tb-lib').textContent = G.recordings.length;
   const wrap = $('libWrap');
   if (!G.recordings.length) {
-    wrap.innerHTML = '<div class="empty"><div class="ei">📂</div><div class="et">No recordings yet</div></div>';
+    wrap.innerHTML = '<div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><div class="et">No recordings yet</div></div>';
     return;
   }
   // Sort: pinned template first
@@ -1200,11 +1216,14 @@ async function runRecording(id) {
     expectedStatus:  200
   };
   const r = await bg('RUN_CASE', { c: fakeCase });
+  const fullResult = { ...r, caseName: rec.name, caseId: fakeCase.id };
+  G.results.unshift(fullResult);
+  renderResults(); updateCounts();
   showRunResult({ name: rec.name }, r);
   toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + rec.name, r.pass ? 'pass' : 'fail');
 }
 
-// Smart Run — conditional portal/project handling, then replay
+// Smart run a recording (portal/project aware replay)
 async function smartRunRecording(id) {
   const rec = G.recordings.find(r => r.id === id);
   if (!rec) { toast('Recording not found','fail'); return; }
@@ -1223,6 +1242,9 @@ async function smartRunRecording(id) {
     expectedStatus:  200
   };
   const r = await bg('SMART_RUN', { c: fakeCase });
+  const fullResult = { ...r, caseName: rec.name, caseId: fakeCase.id };
+  G.results.unshift(fullResult);
+  renderResults(); updateCounts();
   showRunResult({ name: rec.name }, r);
   const actions = r.smartActions ? r.smartActions.map(a => a.action).join(' → ') : '';
   toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + rec.name + (actions ? ' [' + actions + ']' : ''), r.pass ? 'pass' : 'fail');
@@ -1246,6 +1268,9 @@ async function runLive() {
     expectedStatus:  200
   };
   const r = await bg('RUN_CASE', { c: fakeCase });
+  const fullResult = { ...r, caseName: fakeCase.name, caseId: fakeCase.id };
+  G.results.unshift(fullResult);
+  renderResults(); updateCounts();
   showRunResult({ name: fakeCase.name }, r);
   toast((r.pass ? '✓ Pass' : '✗ Fail') + ' — ' + fakeCase.name, r.pass ? 'pass' : 'fail');
 }
@@ -1362,7 +1387,7 @@ function renderTests() {
   $('tb-tests').textContent = G.cases.length;
   const wrap = $('testsWrap');
   if (!G.cases.length) {
-    wrap.innerHTML = '<div class="empty"><div class="ei">🧪</div><div class="et">No test cases yet</div></div>';
+    wrap.innerHTML = '<div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v5a6 6 0 0 1-6 0V3z"/><path d="M12 14v7"/><path d="M8 21h8"/><path d="M7 8V3"/><path d="M17 8V3"/></svg></div><div class="et">No test cases yet</div></div>';
     return;
   }
   const tb = { API:'bblue', WEB:'blilac', WEB_API:'bmint' };
@@ -1499,8 +1524,7 @@ function showRunResult(c, r) {
     + '</div>'
     + (r.error ? '<div style="background:var(--red-bg);border:1px solid rgba(240,91,91,.2);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--red);margin-bottom:10px">'+r.error+'</div>' : '')
     + (r.note  ? '<div style="background:var(--amber-bg);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--amber);margin-bottom:10px">'+r.note+'</div>' : '')
-    + (r.healed && r.healed.length ? '<div style="background:#1a2f1a;border:1px solid rgba(72,199,142,.25);border-radius:8px;padding:9px 11px;font-size:11px;color:#48c78e;margin-bottom:10px"><b>🩹 Self-Healed (' + r.healed.length + '):</b><br>' + r.healed.map(h => '• <code>' + (h.selector||'').slice(0,40) + '</code> → <b>' + h.strategy + '</b>').join('<br>') + '</div>' : '')
-    + (r.steps && r.steps.length ? '<div style="margin-top:6px;font-size:11px;color:var(--fg2)"><b>Steps:</b><br>' + r.steps.map((st,idx) => '<span style="color:'+(st.ok?'#48c78e':'#f05b5b')+'">' + (st.ok?'✓':'✗') + ' ' + (idx+1) + '. ' + st.action + (st.retries ? ' <span style="color:#fabd2f">(retry×'+st.retries+')</span>' : '') + (st.healed ? ' <span style="color:#48c78e">🩹 '+st.healed.strategy+'</span>' : '') + (st.skipped ? ' <span style="color:#fabd2f">⏭ skipped</span>' : '') + '</span>').join('<br>') + '</div>' : '')
+    + (r.steps && r.steps.length ? '<div style="margin-top:6px;font-size:11px;color:var(--fg2)"><b>Steps:</b><br>' + r.steps.map((st,idx) => '<span style="color:'+(st.ok?'#48c78e':'#f05b5b')+'">' + (st.ok?'✓':'✗') + ' ' + (idx+1) + '. ' + st.action + (st.retries ? ' <span style="color:#fabd2f">(retry×'+st.retries+')</span>' : '') + (st.skipped ? ' <span style="color:#fabd2f">⏭ skipped</span>' : '') + '</span>').join('<br>') + '</div>' : '')
     + (r.body  ? '<div class="fld"><label>Response</label><textarea class="ta" readonly style="min-height:80px">'+r.body.slice(0,600)+'</textarea></div>' : '');
   openModal('runModal');
 }
@@ -1544,19 +1568,27 @@ function renderResults() {
   $('tb-results').textContent = G.results.length;
   const wrap = $('resultsWrap');
   if (!G.results.length) {
-    wrap.innerHTML = '<div class="empty"><div class="ei">📊</div><div class="et">No results yet</div></div>';
+    wrap.innerHTML = '<div class="empty"><div class="ei"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div><div class="et">No results yet</div></div>';
     return;
   }
-  wrap.innerHTML = G.results.slice(0,30).map(r =>
-    '<div class="rrow">'
-    + '<div style="font-size:16px;flex-shrink:0">'+(r.pass?'✅':'❌')+'</div>'
+  wrap.innerHTML = G.results.slice(0,30).map((r, idx) =>
+    '<div class="rrow" style="cursor:pointer" data-result-idx="'+idx+'">'
+    + '<div style="flex-shrink:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center">'+(r.pass ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>')+'</div>'
     + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:12px;font-weight:600">'+(r.caseName||'Test')+'</div>'
-      + '<div style="font-size:10.5px;color:var(--t3);margin-top:1px">'+new Date(r.t0||Date.now()).toLocaleTimeString()+' · '+dur(r.ms||0)+(r.status?' · HTTP '+r.status:'')+'</div>'
+      + '<div style="font-size:10.5px;color:var(--t3);margin-top:1px">'+new Date(r.t0||Date.now()).toLocaleTimeString()+' · '+dur(r.ms||0)+(r.status?' · HTTP '+r.status:'')+(r.steps&&r.steps.length ? ' · '+r.steps.filter(s=>s.ok).length+'/'+r.steps.length+' steps' : '')+'</div>'
     + '</div>'
     + '<span class="badge '+(r.pass?'bsage':'bpink')+'">'+(r.pass?'Pass':'Fail')+'</span>'
     + '</div>'
   ).join('');
+  // Delegated click to show result details
+  wrap.onclick = function(e) {
+    const row = e.target.closest('[data-result-idx]');
+    if (!row) return;
+    const idx = parseInt(row.dataset.resultIdx);
+    const r = G.results[idx];
+    if (r) showRunResult({ name: r.caseName || 'Test' }, r);
+  };
 }
 
 async function clearResults() {
@@ -2027,34 +2059,79 @@ function toggleZpSection(bodyId, arrowId) {
 }
 
 function populateZohoRecSel() {
-  const sel = $('zohoExpRec'), cur = sel.value;
-  sel.innerHTML = '<option value="">— Select —</option>'
-    + G.recordings.map(r =>
-      '<option value="' + r.id + '">' + escHtml(r.name) + ' (' + (r.steps?.length || 0) + ' steps)</option>'
-    ).join('');
-  if (cur && G.recordings.find(r => r.id === cur)) sel.value = cur;
-  $('zohoExportBtn').disabled = !sel.value;
-  // Also load import projects
+  const list = $('zohoExpRecList');
+  if (!list) return;
+  if (!G.recordings.length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--t3);padding:8px;text-align:center">No recordings available</div>';
+    $('zohoExportBtn').disabled = true;
+    $('zohoExpCount').textContent = '0 selected';
+    $('zohoExpSelectAll').checked = false;
+    loadZiProjects();
+    return;
+  }
+  // Use DocumentFragment for fast DOM build on large lists
+  const frag = document.createDocumentFragment();
+  G.recordings.forEach(r => {
+    const lbl = document.createElement('label');
+    lbl.className = 'bulk-chk-row';
+    lbl.innerHTML = '<input type="checkbox" class="zoho-exp-chk" value="' + r.id + '"/>'
+      + '<span class="bulk-chk-name">' + escHtml(r.name) + '</span>'
+      + '<span class="bulk-chk-meta">' + (r.steps?.length || 0) + ' steps</span>';
+    frag.appendChild(lbl);
+  });
+  list.innerHTML = '';
+  list.appendChild(frag);
+  updateBulkExportCount();
   loadZiProjects();
 }
 
+function getSelectedExportRecs() {
+  return [...document.querySelectorAll('.zoho-exp-chk:checked')].map(cb => cb.value);
+}
+
+let _expCountRaf = 0;
+function updateBulkExportCount() {
+  cancelAnimationFrame(_expCountRaf);
+  _expCountRaf = requestAnimationFrame(() => {
+    const all = document.querySelectorAll('.zoho-exp-chk');
+    let checked = 0;
+    for (let i = 0; i < all.length; i++) if (all[i].checked) checked++;
+    $('zohoExpCount').textContent = checked + ' selected';
+    $('zohoExportBtn').disabled = checked === 0;
+    $('zohoExpSelectAll').checked = all.length > 0 && checked === all.length;
+  });
+}
+
+let _bulkExportRecIds = [];
+
 async function openZohoExportModal() {
-  const recId = gv('zohoExpRec');
-  if (!recId) { toast('Select a recording first', 'fail'); return; }
-  const rec = G.recordings.find(r => r.id === recId);
-  if (!rec) return;
+  const selectedIds = getSelectedExportRecs();
+  if (!selectedIds.length) { toast('Select at least one recording', 'fail'); return; }
+  const recs = selectedIds.map(id => G.recordings.find(r => r.id === id)).filter(Boolean);
+  if (!recs.length) return;
   const { token, portal } = getZohoCreds();
   if (!token || !portal) { toast('Configure ZP connection first', 'fail'); return; }
   const dc = getZohoCreds().dc;
 
+  _bulkExportRecIds = selectedIds;
+  const isBulk = recs.length > 1;
+
   // Pre-fill
-  $('zeRecName').textContent = rec.name + ' (' + (rec.steps?.length || 0) + ' steps)';
-  $('zeTaskName').value = rec.name;
-  $('zeTaskDesc').value = 'Automated test: ' + rec.name + '\nSteps: ' + (rec.steps?.length || 0) + '\nURL: ' + (rec.startUrl || rec.steps?.[0]?.target || '—');
+  if (isBulk) {
+    $('zeRecName').textContent = recs.length + ' recordings selected';
+    $('zeSingleFields').style.display = 'none';
+  } else {
+    $('zeRecName').textContent = recs[0].name + ' (' + (recs[0].steps?.length || 0) + ' steps)';
+    $('zeSingleFields').style.display = '';
+    $('zeTaskName').value = recs[0].name;
+    $('zeTaskDesc').value = 'Automated test: ' + recs[0].name + '\nSteps: ' + (recs[0].steps?.length || 0) + '\nURL: ' + (recs[0].startUrl || recs[0].steps?.[0]?.target || '—');
+  }
   $('zeProject').innerHTML = '<option value="">Loading…</option>';
   $('zeTasklist').innerHTML = '<option value="">Select a project first</option>';
   $('zeTasklist').disabled = true;
   $('zeStatus').style.display = 'none';
+  $('zeBulkProgress').style.display = 'none';
+  $('zeBulkProgress').innerHTML = '';
   $('doZohoExportBtn').disabled = false;
   openModal('zohoExportModal');
 
@@ -2090,66 +2167,142 @@ async function onZeProjectChange() {
   }
 }
 
+const BULK_CONCURRENCY = 5; // parallel API calls at a time
+
 async function doZohoExport() {
-  const recId = gv('zohoExpRec');
-  const rec = G.recordings.find(r => r.id === recId);
-  if (!rec) return;
+  const recs = _bulkExportRecIds.map(id => G.recordings.find(r => r.id === id)).filter(Boolean);
+  if (!recs.length) return;
   const projectId  = gv('zeProject');
   const tasklistId = gv('zeTasklist');
-  const taskName   = gv('zeTaskName') || rec.name;
-  const taskDesc   = $('zeTaskDesc').value || '';
   if (!projectId) { toast('Select a project', 'fail'); return; }
   const { token, portal, dc } = getZohoCreds();
 
   const st = $('zeStatus');
+  const prog = $('zeBulkProgress');
   st.style.display = 'block';
   st.style.background = 'rgba(59,130,246,.1)';
   st.style.color = '#60a5fa';
-  st.textContent = 'Exporting…';
   $('doZohoExportBtn').disabled = true;
 
-  // Prepare attachments
   const attachSteps = $('zeAttachSteps').checked;
   const attachCode  = $('zeAttachCode').checked;
-  let stepsJson = null, codeText = null, codeFilename = null;
+  const isBulk = recs.length > 1;
 
-  if (attachSteps) {
-    stepsJson = JSON.stringify({ name: rec.name, steps: rec.steps, startUrl: rec.startUrl, network: rec.network }, null, 2);
-  }
-  if (attachCode) {
-    const recWithCfg2 = { ...rec, _emailDomain: G.settings.randomEmailDomain || '@test.com', _phonePrefix: G.settings.randomPhonePrefix || '+1-555-' };
-    const codeR = await bg('GEN_CODE', { rec: recWithCfg2, fw: G.settings.fw, lang: G.settings.lang });
-    if (codeR?.code) {
-      codeText = codeR.code;
-      const ext = { javascript:'.js', typescript:'.ts', python:'.py', java:'.java', csharp:'.cs' }[G.settings.lang] || '.js';
-      codeFilename = rec.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + ext;
+  if (isBulk) {
+    prog.style.display = 'block';
+    prog.innerHTML = '';
+    let passed = 0, failed = 0, done = 0;
+    const total = recs.length;
+    const progLines = []; // batch DOM updates
+
+    // Pre-generate code if needed (parallelize prep)
+    const prepWork = recs.map(rec => {
+      const taskName = 'UIAK - ' + rec.name;
+      const taskDesc = 'Automated test: ' + rec.name + '\nSteps: ' + (rec.steps?.length || 0) + '\nURL: ' + (rec.startUrl || rec.steps?.[0]?.target || '—');
+      let stepsJson = null;
+      if (attachSteps) {
+        stepsJson = JSON.stringify({ name: rec.name, steps: rec.steps, startUrl: rec.startUrl, network: rec.network }, null, 2);
+      }
+      return { rec, taskName, taskDesc, stepsJson };
+    });
+
+    // Process in parallel batches
+    async function exportOne(item) {
+      const { rec, taskName, taskDesc, stepsJson } = item;
+      let codeText = null, codeFilename = null;
+      if (attachCode) {
+        const recWithCfg2 = { ...rec, _emailDomain: G.settings.randomEmailDomain || '@test.com', _phonePrefix: G.settings.randomPhonePrefix || '+1-555-' };
+        const codeR = await bg('GEN_CODE', { rec: recWithCfg2, fw: G.settings.fw, lang: G.settings.lang });
+        if (codeR?.code) {
+          codeText = codeR.code;
+          const ext = { javascript:'.js', typescript:'.ts', python:'.py', java:'.java', csharp:'.cs' }[G.settings.lang] || '.js';
+          codeFilename = rec.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + ext;
+        }
+      }
+      const r = await bg('ZOHO_EXPORT', { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename });
+      return { rec, ok: !!r?.ok, error: r?.error };
     }
-  }
 
-  const r = await bg('ZOHO_EXPORT', { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename });
-  if (r?.ok) {
-    st.style.background = 'rgba(34,197,94,.1)';
-    st.style.color = '#22c55e';
-    let msg = '✓ Task created: ' + (r.taskName || taskName);
-    if (r.attachments?.length) {
-      const ok = r.attachments.filter(a => a.ok).length;
-      const total = r.attachments.length;
-      msg += ' · ' + ok + '/' + total + ' attachments';
-      if (ok < total) {
-        const fails = r.attachments.filter(a => !a.ok).map(a => a.name + ': ' + (a.err || '?'));
-        msg += '\n' + fails.join('\n');
-        st.style.background = 'rgba(234,179,8,.12)';
-        st.style.color = '#ca8a04';
+    // Concurrency-limited parallel execution
+    let idx = 0;
+    let flushTimer = 0;
+    function flushProgress() {
+      if (!progLines.length) return;
+      const html = progLines.splice(0).join('');
+      prog.insertAdjacentHTML('beforeend', html);
+    }
+
+    async function worker() {
+      while (idx < prepWork.length) {
+        const i = idx++;
+        const result = await exportOne(prepWork[i]);
+        done++;
+        if (result.ok) passed++; else failed++;
+        progLines.push('<div style="font-size:10.5px;padding:2px 0;color:' + (result.ok ? '#22c55e' : '#ef4444') + '">'
+          + (result.ok ? '✓' : '✗') + ' ' + escHtml(result.rec.name) + (result.ok ? '' : ' — ' + escHtml(result.error || 'Failed')) + '</div>');
+        // Batch DOM updates every 100ms or every 10 items
+        clearTimeout(flushTimer);
+        if (done % 10 === 0 || done === total) flushProgress();
+        else flushTimer = setTimeout(flushProgress, 100);
+        st.textContent = 'Exporting… ' + done + '/' + total + ' (' + passed + ' ok, ' + failed + ' fail)';
       }
     }
-    st.textContent = msg;
-    st.style.whiteSpace = 'pre-wrap';
-    toast('📤 Exported to ZP!', 'pass');
+
+    const workers = [];
+    for (let w = 0; w < Math.min(BULK_CONCURRENCY, total); w++) workers.push(worker());
+    await Promise.all(workers);
+    flushProgress();
+
+    st.style.background = failed ? 'rgba(234,179,8,.12)' : 'rgba(34,197,94,.1)';
+    st.style.color = failed ? '#ca8a04' : '#22c55e';
+    st.textContent = '✓ ' + passed + ' exported' + (failed ? ', ' + failed + ' failed' : '') + ' — ' + total + ' total';
+    toast('📤 Exported ' + passed + '/' + total + ' to ZP!', failed ? 'fail' : 'pass');
   } else {
-    st.style.background = 'rgba(239,68,68,.1)';
-    st.style.color = '#ef4444';
-    st.textContent = '✗ ' + (r?.error || 'Export failed');
-    $('doZohoExportBtn').disabled = false;
+    // Single export (original behavior)
+    const rec = recs[0];
+    const taskName = 'UIAK - ' + (gv('zeTaskName') || rec.name);
+    const taskDesc = $('zeTaskDesc').value || '';
+    st.textContent = 'Exporting…';
+
+    let stepsJson = null, codeText = null, codeFilename = null;
+    if (attachSteps) {
+      stepsJson = JSON.stringify({ name: rec.name, steps: rec.steps, startUrl: rec.startUrl, network: rec.network }, null, 2);
+    }
+    if (attachCode) {
+      const recWithCfg2 = { ...rec, _emailDomain: G.settings.randomEmailDomain || '@test.com', _phonePrefix: G.settings.randomPhonePrefix || '+1-555-' };
+      const codeR = await bg('GEN_CODE', { rec: recWithCfg2, fw: G.settings.fw, lang: G.settings.lang });
+      if (codeR?.code) {
+        codeText = codeR.code;
+        const ext = { javascript:'.js', typescript:'.ts', python:'.py', java:'.java', csharp:'.cs' }[G.settings.lang] || '.js';
+        codeFilename = rec.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + ext;
+      }
+    }
+
+    const r = await bg('ZOHO_EXPORT', { token, portal, dc, projectId, tasklistId, taskName, taskDesc, stepsJson, codeText, codeFilename });
+    if (r?.ok) {
+      st.style.background = 'rgba(34,197,94,.1)';
+      st.style.color = '#22c55e';
+      let msg = '✓ Task created: ' + (r.taskName || taskName);
+      if (r.attachments?.length) {
+        const ok = r.attachments.filter(a => a.ok).length;
+        const total = r.attachments.length;
+        msg += ' · ' + ok + '/' + total + ' attachments';
+        if (ok < total) {
+          const fails = r.attachments.filter(a => !a.ok).map(a => a.name + ': ' + (a.err || '?'));
+          msg += '\n' + fails.join('\n');
+          st.style.background = 'rgba(234,179,8,.12)';
+          st.style.color = '#ca8a04';
+        }
+      }
+      st.textContent = msg;
+      st.style.whiteSpace = 'pre-wrap';
+      toast('📤 Exported to ZP!', 'pass');
+    } else {
+      st.style.background = 'rgba(239,68,68,.1)';
+      st.style.color = '#ef4444';
+      st.textContent = '✗ ' + (r?.error || 'Export failed');
+      $('doZohoExportBtn').disabled = false;
+    }
   }
 }
 
@@ -2179,6 +2332,7 @@ async function onZiProjectChange() {
   tk.innerHTML = '<option value="">Select a tasklist/project first</option>';
   tk.disabled = true;
   $('zohoImportBtn').disabled = true;
+  updateBulkImportBtnState();
   if (!projectId) {
     tl.innerHTML = '<option value="">Select a project first</option>';
     tl.disabled = true;
@@ -2477,6 +2631,229 @@ async function runZohoTask() {
       + '</div>';
     toast(result.pass ? '✅ Test passed!' : '❌ Test failed', result.pass ? 'pass' : 'fail');
   }
+}
+
+// ═══════════════════════════════════════════════════
+//  BULK IMPORT
+// ═══════════════════════════════════════════════════
+let _zbiBulkTasks = [];
+
+let _impCountRaf = 0;
+function updateBulkImportCount() {
+  cancelAnimationFrame(_impCountRaf);
+  _impCountRaf = requestAnimationFrame(() => {
+    const all = document.querySelectorAll('.zbi-task-chk');
+    let checked = 0;
+    for (let i = 0; i < all.length; i++) if (all[i].checked) checked++;
+    $('zbiCount').textContent = checked + ' selected';
+    $('doZohoBulkImportBtn').disabled = checked === 0;
+    $('zbiSelectAll').checked = all.length > 0 && checked === all.length;
+  });
+}
+
+let _zbiListWired = false;
+async function openZohoBulkImportModal() {
+  const projectId = gv('ziProject');
+  const tasklistId = gv('ziTasklist');
+  if (!projectId) { toast('Select a project first', 'fail'); return; }
+  const { token, portal, dc } = getZohoCreds();
+  if (!token || !portal) { toast('Configure ZP connection first', 'fail'); return; }
+
+  $('zbiInfo').textContent = 'Loading tasks…';
+  $('zbiList').innerHTML = '';
+  $('zbiStatus').style.display = 'none';
+  $('zbiProgress').style.display = 'none';
+  $('zbiProgress').innerHTML = '';
+  $('doZohoBulkImportBtn').disabled = true;
+  $('zbiSelectAll').checked = false;
+  $('zbiCount').textContent = '0 selected';
+  openModal('zohoBulkImportModal');
+
+  // Wire delegate once
+  if (!_zbiListWired) {
+    _zbiListWired = true;
+    $('zbiList').addEventListener('change', (e) => {
+      if (e.target.classList.contains('zbi-task-chk')) updateBulkImportCount();
+    });
+  }
+
+  const r = await bg('ZOHO_TASKS', { token, portal, dc, projectId });
+  if (!r?.ok) {
+    $('zbiInfo').textContent = 'Failed to load tasks';
+    return;
+  }
+
+  let tasks = r.tasks || [];
+  if (tasklistId && tasklistId !== '_all') {
+    tasks = tasks.filter(t => {
+      const tlId = t.tasklist?.id || t.tasklist?.id_string || t.tasklist_id;
+      return tlId === tasklistId;
+    });
+  }
+
+  _zbiBulkTasks = tasks;
+
+  if (!tasks.length) {
+    $('zbiInfo').textContent = 'No tasks found in this tasklist';
+    return;
+  }
+
+  // Build a Set of already-imported task IDs for O(1) lookup
+  const importedSet = new Set();
+  for (const r of G.recordings) if (r.zohoTaskId) importedSet.add(r.zohoTaskId);
+
+  $('zbiInfo').textContent = tasks.length + ' task(s) available for import';
+
+  // Use DocumentFragment for fast rendering
+  const frag = document.createDocumentFragment();
+  tasks.forEach(t => {
+    const tid = t.id_string || t.id;
+    const badge = t.status?.name || 'Open';
+    const alreadyImported = importedSet.has(tid);
+    const lbl = document.createElement('label');
+    lbl.className = 'bulk-chk-row bulk-chk-bordered';
+    lbl.innerHTML = '<input type="checkbox" class="zbi-task-chk" value="' + tid + '"/>'
+      + '<span class="bulk-chk-name">' + escHtml(t.name) + '</span>'
+      + '<span class="bulk-chk-badge">' + escHtml(badge) + '</span>'
+      + (alreadyImported ? '<span class="bulk-chk-imported">imported</span>' : '');
+    frag.appendChild(lbl);
+  });
+  $('zbiList').innerHTML = '';
+  $('zbiList').appendChild(frag);
+}
+
+async function doZohoBulkImport() {
+  const selectedIds = [...document.querySelectorAll('.zbi-task-chk:checked')].map(cb => cb.value);
+  if (!selectedIds.length) { toast('Select at least one task', 'fail'); return; }
+
+  const projectId = gv('ziProject');
+  const { token, portal, dc } = getZohoCreds();
+  const st = $('zbiStatus');
+  const prog = $('zbiProgress');
+
+  st.style.display = 'block';
+  st.style.background = 'rgba(59,130,246,.1)';
+  st.style.color = '#60a5fa';
+  prog.style.display = 'block';
+  prog.innerHTML = '';
+  $('doZohoBulkImportBtn').disabled = true;
+
+  // Build Set for O(1) dupe check
+  const importedSet = new Set();
+  for (const r of G.recordings) {
+    if (r.zohoTaskId && r.steps?.length > 0) importedSet.add(r.zohoTaskId);
+  }
+
+  // Build Map for O(1) task lookup
+  const taskMap = new Map();
+  for (const t of _zbiBulkTasks) taskMap.set(t.id_string || t.id, t);
+
+  let imported = 0, skipped = 0, failed = 0, done = 0;
+  const total = selectedIds.length;
+  const progLines = [];
+  let flushTimer = 0;
+
+  function flushProgress() {
+    if (!progLines.length) return;
+    prog.insertAdjacentHTML('beforeend', progLines.splice(0).join(''));
+  }
+
+  async function importOne(taskId) {
+    const task = taskMap.get(taskId);
+    if (!task) return { status: 'failed', name: '?' };
+
+    // Skip already-imported
+    if (importedSet.has(taskId)) {
+      return { status: 'skipped', name: task.name };
+    }
+
+    // Fetch detail + attachments in parallel
+    const localCtx = { projectId, taskId };
+    const [dr, ar] = await Promise.all([
+      bg('ZOHO_TASK_DETAIL', { token, portal, dc, projectId, taskId }),
+      bg('ZOHO_ATTACHMENTS', { token, portal, dc, projectId, taskId })
+    ]);
+
+    if (dr?.ok) localCtx.task = dr.task;
+    const attachments = ar?.attachments || [];
+    const stepsAttach = attachments.find(a => {
+      const fn = (a.filename || a.name || a.file_name || a.display_name || '').toLowerCase();
+      return fn.endsWith('.json');
+    });
+    if (stepsAttach) {
+      localCtx.stepsAttachId = stepsAttach.attachment_id || stepsAttach.id || stepsAttach.id_string;
+      localCtx.stepsDownloadUrl = stepsAttach.download_url || stepsAttach.content_url || '';
+      localCtx.stepsFileId = stepsAttach.third_party_file_id || '';
+    }
+
+    // Fetch steps using the shared function (need to set global temporarily)
+    const prevCtx = _zohoSelectedTask;
+    _zohoSelectedTask = localCtx;
+    let stepsData = await fetchStepsFromAttachment();
+    _zohoSelectedTask = prevCtx;
+
+    const rec = {
+      id: uid(),
+      name: '[ZP] ' + (task.name || 'Imported'),
+      steps: stepsData?.steps || [],
+      network: stepsData?.network || [],
+      startUrl: stepsData?.startUrl || '',
+      at: new Date().toISOString(),
+      zohoTaskId: taskId,
+      zohoProjectId: projectId
+    };
+
+    G.recordings.push(rec);
+    importedSet.add(taskId);
+    await bg('SAVE_REC', { rec });
+    return { status: 'imported', name: task.name, steps: rec.steps.length };
+  }
+
+  // Process with concurrency limit
+  let idx = 0;
+  async function worker() {
+    while (idx < selectedIds.length) {
+      const i = idx++;
+      const result = await importOne(selectedIds[i]);
+      done++;
+      if (result.status === 'imported') {
+        imported++;
+        progLines.push('<div style="font-size:10.5px;padding:2px 0;color:#22c55e">✓ ' + escHtml(result.name) + ' (' + (result.steps || 0) + ' steps)</div>');
+      } else if (result.status === 'skipped') {
+        skipped++;
+        progLines.push('<div style="font-size:10.5px;padding:2px 0;color:var(--t3)">⏭ ' + escHtml(result.name) + ' (already imported)</div>');
+      } else {
+        failed++;
+        progLines.push('<div style="font-size:10.5px;padding:2px 0;color:#ef4444">✗ ' + escHtml(result.name) + '</div>');
+      }
+      clearTimeout(flushTimer);
+      if (done % 10 === 0 || done === total) flushProgress();
+      else flushTimer = setTimeout(flushProgress, 100);
+      st.textContent = 'Importing… ' + done + '/' + total + ' (' + imported + ' ok, ' + skipped + ' skip, ' + failed + ' fail)';
+    }
+  }
+
+  const workers = [];
+  for (let w = 0; w < Math.min(BULK_CONCURRENCY, total); w++) workers.push(worker());
+  await Promise.all(workers);
+  flushProgress();
+
+  st.style.background = 'rgba(34,197,94,.1)';
+  st.style.color = '#22c55e';
+  let msg = '✓ ' + imported + ' imported';
+  if (skipped) msg += ', ' + skipped + ' skipped';
+  if (failed) msg += ', ' + failed + ' failed';
+  st.textContent = msg;
+
+  renderLibrary();
+  updateCounts();
+  toast('📥 Imported ' + imported + ' task(s) from ZP!', 'pass');
+}
+
+// Enable bulk import button when tasklist is selected
+function updateBulkImportBtnState() {
+  const hasProject = !!gv('ziProject');
+  $('zohoBulkImportBtn').disabled = !hasProject;
 }
 
 boot();
