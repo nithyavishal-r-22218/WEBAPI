@@ -1,0 +1,35 @@
+{
+  "name": "zoho-projects-e2e-agent",
+  "version": "1.0.0",
+  "description": "End-to-end testing agent for Zoho Projects web application",
+  "type": "module",
+  "main": "zoho-projects-e2e-agent.js",
+  "scripts": {
+    "test": "node test-runner.js",
+    "test:login": "node test-runner.js loginTest",
+    "test:create-project": "node test-runner.js createProjectTest",
+    "test:workflow": "node test-runner.js fullWorkflowTest",
+    "test:custom": "node test-runner.js customStepTest",
+    "test:search": "node test-runner.js searchProjectTest",
+    "test:batch": "node test-runner.js batchTestSuite",
+    "test:performance": "node test-runner.js performanceTest",
+    "test:all": "node test-runner.js loginTest createProjectTest fullWorkflowTest searchProjectTest"
+  },
+  "keywords": [
+    "zoho-projects",
+    "e2e",
+    "testing",
+    "automation",
+    "puppeteer",
+    "godmode"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^24.38.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

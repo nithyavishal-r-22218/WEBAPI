@@ -1,0 +1,29 @@
+# Environment variables with credentials
+.env
+
+# Test results
+test-results/
+*.png
+*.jpg
+*.jpeg
+
+# Screenshots
+screenshots/
+
+# Node modules (if installed locally)
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
