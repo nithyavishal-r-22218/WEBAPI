@@ -1,0 +1,32 @@
+[
+  {
+    "name": "session_id",
+    "value": "example_session_value",
+    "domain": ".example.com",
+    "path": "/",
+    "expires": 1893456000,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "auth_token",
+    "value": "example_auth_token_value",
+    "domain": ".example.com",
+    "path": "/",
+    "expires": 1893456000,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Strict"
+  },
+  {
+    "name": "user_preferences",
+    "value": "theme=dark;lang=en",
+    "domain": ".example.com",
+    "path": "/",
+    "expires": 1893456000,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  }
+]
